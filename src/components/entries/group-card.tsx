@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Ellipsis, FileText, Layers, Link2, Mic, Pencil, Plus, StickyNote, Ungroup } from "lucide-react";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/menu";
@@ -12,6 +12,7 @@ import { cn, errorMessage } from "@/lib/utils";
 import { AttachmentImage } from "./media";
 import { EntryCard } from "./entry-card";
 import { useSelection } from "./selection";
+import { useGroupDrop, useInboxDnd } from "./dnd";
 
 function MemberPreview({ entry }: { entry: Entry }) {
   const image = entry.attachments.find((a) => a.kind === "image");
@@ -29,26 +30,48 @@ function MemberPreview({ entry }: { entry: Entry }) {
 }
 
 /** A group of entries in the Inbox: collapsed shows a compact preview, expanded shows every entry. */
-export function GroupCard({ group, entries, layout }: { group: Pick<EntryGroup, "id" | "title">; entries: Entry[]; layout: "list" | "grid" }) {
+export function GroupCard({ group, entries, layout }: { group: EntryGroup; entries: Entry[]; layout: "list" | "grid" }) {
   const user = useUser();
   const commands = useGroupCommands(user.id);
   const selection = useSelection();
   const [open, setOpen] = useLocalState(`stash-group-open-${group.id}`, false);
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(group.title);
+  const dnd = useInboxDnd();
+  const drop = useGroupDrop(group);
+  const ref = useRef<HTMLElement | null>(null);
+  const cancelled = useRef(false);
+
+  // A group made by dropping one entry on another asks for its name straight away.
+  useEffect(() => {
+    if (dnd?.namingGroupId !== group.id) return;
+    dnd.doneNaming();
+    setTitle(group.title);
+    setRenaming(true);
+    ref.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [dnd, group.id, group.title]);
+
+  useEffect(() => setTitle(group.title), [group.title]);
   const ids = entries.map((e) => e.id);
   const allSelected = !!selection?.active && ids.every((id) => selection.isSelected(id));
   const summary = entries.map((e) => e.title || e.link_preview?.title || e.body?.split("\n")[0] || e.attachments[0]?.file_name).filter(Boolean);
 
   async function saveTitle() {
     setRenaming(false);
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
     const next = title.trim();
-    if (!next || next === group.title) {
+    if (!next) {
       setTitle(group.title);
       return;
     }
+    // Confirming a name saves the group as a collection, even if the suggestion is kept.
+    if (next === group.title && group.collection_id) return;
     try {
-      await commands.rename(group.id, next);
+      const { linkedNow } = await commands.rename(group.id, next);
+      if (linkedNow) toast.success(`Saved to Collections as “${next}”`);
     } catch (err) {
       setTitle(group.title);
       toast.error(errorMessage(err));
@@ -62,13 +85,23 @@ export function GroupCard({ group, entries, layout }: { group: Pick<EntryGroup, 
 
   return (
     <section
+      ref={(node) => {
+        ref.current = node;
+        drop.setNodeRef(node);
+      }}
       aria-label={`Group ${group.title}`}
       className={cn(
-        "relative rounded-2xl border bg-card shadow-soft animate-fade-up",
+        "relative rounded-2xl border bg-card shadow-soft transition-[transform,box-shadow] duration-200 animate-fade-up",
         layout === "grid" && "mb-3 break-inside-avoid",
         allSelected && "ring-2 ring-primary",
+        drop.isOver && "scale-[0.98] ring-2 ring-primary shadow-float",
       )}
     >
+      {drop.isOver && (
+        <span className="pointer-events-none absolute inset-x-0 -top-3 z-20 mx-auto w-fit rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground shadow">
+          Add to {group.title}
+        </span>
+      )}
       <div className="flex items-center gap-2.5 p-3">
         {renaming ? (
           <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -83,12 +116,14 @@ export function GroupCard({ group, entries, layout }: { group: Pick<EntryGroup, 
               onKeyDown={(e) => {
                 if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                 if (e.key === "Escape") {
+                  cancelled.current = true;
                   setTitle(group.title);
                   setRenaming(false);
                 }
               }}
               maxLength={120}
               aria-label="Group name"
+              placeholder="Name this group"
               className="h-9 min-w-0 flex-1 rounded-lg border border-primary/50 bg-card px-2.5 text-[16px] font-semibold outline-none sm:text-[15px]"
             />
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useRef, useState } from "react";
+import { memo, useState } from "react";
 import { format, isPast } from "date-fns";
 import { Bell, Check, CloudOff, Folder, Hash, Layers, Pin, Repeat, Star } from "lucide-react";
 import { useCollections } from "@/lib/data/collections";
@@ -13,8 +13,7 @@ import { AttachmentAudio, AttachmentFile, MediaGrid } from "./media";
 import { LinkCard } from "./link-card";
 import { EntryActions } from "./entry-actions";
 import { useSelection } from "./selection";
-
-const LONG_PRESS_MS = 450;
+import { useEntryDnd, useInboxDnd } from "./dnd";
 
 function nextReminder(entry: Entry) {
   return entry.reminders.find((r) => !r.completed_at) ?? null;
@@ -24,19 +23,22 @@ export const EntryCard = memo(function EntryCard({
   entry,
   layout = "list",
   inGroup = false,
+  noDrag = false,
 }: {
   entry: Entry;
   layout?: "list" | "grid";
   /** Rendered inside a group card (hides the group chip). */
   inGroup?: boolean;
+  /** Not draggable (e.g. the pinned strip, which repeats entries from the list). */
+  noDrag?: boolean;
 }) {
   const { openEntry } = useStash();
   const { data: collections } = useCollections();
   const { data: groups } = useGroups();
   const selection = useSelection();
+  const dnd = useInboxDnd();
+  const drag = useEntryDnd(entry, noDrag);
   const [lightbox, setLightbox] = useState<number | null>(null);
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressed = useRef(false);
 
   const visual = entry.attachments.filter((a) => a.kind === "image" || a.kind === "video");
   const audio = entry.attachments.filter((a) => a.kind === "audio");
@@ -44,31 +46,26 @@ export const EntryCard = memo(function EntryCard({
   const reminder = nextReminder(entry);
   const entryCollections = (collections ?? []).filter((c) => entry.collection_ids.includes(c.id));
   const group = !inGroup && entry.group_id ? groups?.find((g) => g.id === entry.group_id) : undefined;
+  const targetGroup = entry.group_id ? groups?.find((g) => g.id === entry.group_id) : undefined;
   const isGrid = layout === "grid";
   const selecting = !!selection?.active && !entry.pending;
   const selected = !!selection?.isSelected(entry.id);
 
   const activate = () => {
-    if (entry.pending) return;
-    if (longPressed.current) {
-      longPressed.current = false;
-      return;
-    }
+    if (entry.pending || dnd?.justDragged()) return;
     if (selecting) selection!.toggle(entry.id);
     else openEntry(entry.id);
   };
 
-  const cancelPress = () => {
-    if (pressTimer.current) clearTimeout(pressTimer.current);
-    pressTimer.current = null;
-  };
-
   return (
     <article
+      ref={drag.setNodeRef}
+      {...drag.dragProps}
       role="button"
       tabIndex={0}
       aria-label={entry.title ?? entry.body?.slice(0, 60) ?? entry.url ?? "Entry"}
       aria-pressed={selecting ? selected : undefined}
+      aria-roledescription={drag.enabled ? "draggable entry" : undefined}
       onClick={activate}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
@@ -77,31 +74,23 @@ export const EntryCard = memo(function EntryCard({
           activate();
         }
       }}
-      onPointerDown={(e) => {
-        // Long-press on touch screens starts multi-select.
-        if (e.pointerType !== "touch" || !selection || entry.pending) return;
-        cancelPress();
-        pressTimer.current = setTimeout(() => {
-          longPressed.current = true;
-          if (selection.active) selection.toggle(entry.id);
-          else selection.start(entry.id);
-        }, LONG_PRESS_MS);
-      }}
-      onPointerUp={cancelPress}
-      onPointerLeave={cancelPress}
-      onPointerCancel={cancelPress}
-      onContextMenu={(e) => {
-        // Suppress the browser's long-press menu while a long-press selection is in progress.
-        if (pressTimer.current || longPressed.current) e.preventDefault();
-      }}
+      onContextMenu={(e) => drag.enabled && e.preventDefault()}
       className={cn(
-        "group relative flex flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left shadow-soft transition-[box-shadow,border-color,transform] duration-200 outline-none select-none hover:border-border hover:shadow-float focus-visible:ring-3 focus-visible:ring-ring/40 animate-fade-up sm:select-auto",
+        "group relative flex flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left shadow-soft transition-[box-shadow,border-color,transform,opacity] duration-200 outline-none select-none [-webkit-touch-callout:none] hover:border-border hover:shadow-float focus-visible:ring-3 focus-visible:ring-ring/40 animate-fade-up sm:select-auto",
+        drag.enabled && "touch-manipulation",
         isGrid && "mb-3 break-inside-avoid",
         entry.pending && "opacity-70",
         selected && "ring-2 ring-primary",
         selecting && "pl-11",
+        drag.isDragging && "opacity-40",
+        drag.isOver && "scale-[0.97] ring-2 ring-primary shadow-float",
       )}
     >
+      {drag.isOver && (
+        <span className="pointer-events-none absolute inset-x-0 -top-3 z-20 mx-auto w-fit rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground shadow">
+          {targetGroup ? `Add to ${targetGroup.title}` : "Create group"}
+        </span>
+      )}
       {selection && !entry.pending && (
         <button
           type="button"

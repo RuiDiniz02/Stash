@@ -10,6 +10,8 @@ const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   env: { NEXT_PUBLIC_APP_VERSION: version },
+  // Dev server only: lets the app be opened at 127.0.0.1 too (separate sign-in cookies from localhost).
+  allowedDevOrigins: ["127.0.0.1"],
   images: {
     remotePatterns: supabaseHost ? [{ protocol: "https", hostname: supabaseHost }] : [],
   },

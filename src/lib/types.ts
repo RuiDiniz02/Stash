@@ -115,6 +115,8 @@ export interface Profile {
 export interface EntryGroup {
   id: string;
   title: string;
+  /** Collection the group is mirrored into once it has been named. */
+  collection_id: string | null;
   created_at: string;
   entry_count: number;
 }

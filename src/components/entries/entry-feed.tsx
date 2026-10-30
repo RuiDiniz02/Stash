@@ -16,7 +16,7 @@ function dayLabel(d: Date) {
 
 type FeedItem =
   | { type: "entry"; key: string; at: string; entry: Entry }
-  | { type: "group"; key: string; at: string; group: Pick<EntryGroup, "id" | "title">; entries: Entry[] };
+  | { type: "group"; key: string; at: string; group: EntryGroup; entries: Entry[] };
 
 /** Folds grouped entries into one item placed where the group's newest loaded entry is. */
 function toItems(entries: Entry[], groups?: EntryGroup[]): FeedItem[] {

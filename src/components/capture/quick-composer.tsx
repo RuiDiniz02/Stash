@@ -65,9 +65,9 @@ export function QuickComposer({ collectionId }: { collectionId?: string }) {
         }}
         rows={1}
         maxLength={50000}
-        placeholder="Capture a thought, paste a link…"
+        placeholder="Capture anything…"
         aria-label="Quick capture"
-        className="field-sizing-content max-h-48 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-5 outline-none placeholder:text-muted-foreground/60"
+        className="field-sizing-content max-h-48 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-5 outline-none placeholder:text-muted-foreground/60"
       />
       {!text.trim() && canRecordAudio() && (
         <button

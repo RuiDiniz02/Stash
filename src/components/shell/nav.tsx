@@ -54,7 +54,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       aria-label="Sidebar"
     >
       <div className={cn("flex h-14 items-center px-4", collapsed ? "justify-center" : "justify-between")}>
-        {collapsed ? <LogoMark /> : <Logo />}
+        <Link href="/" aria-label="Stash — go to Inbox" className="rounded-lg">
+          {collapsed ? <LogoMark /> : <Logo />}
+        </Link>
         {!collapsed && (
           <button
             onClick={onToggle}
@@ -266,8 +268,21 @@ export function PageHeader({
           <>
             {back}
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-[17px] font-semibold tracking-tight">{title}</h1>
-              {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+              {back ? (
+                <>
+                  <h1 className="truncate text-[17px] font-semibold tracking-tight">{title}</h1>
+                  {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+                </>
+              ) : (
+                <>
+                  {/* Mobile: the logo takes the title spot and goes to the Inbox. */}
+                  <Link href="/" aria-label="Stash — go to Inbox" className="inline-flex rounded-lg md:hidden">
+                    <Logo />
+                  </Link>
+                  <h1 className="sr-only md:not-sr-only md:truncate md:text-[17px] md:font-semibold md:tracking-tight">{title}</h1>
+                  {subtitle && <p className="hidden truncate text-xs text-muted-foreground md:block">{subtitle}</p>}
+                </>
+              )}
             </div>
             <div className="flex items-center gap-1">
               {search && (

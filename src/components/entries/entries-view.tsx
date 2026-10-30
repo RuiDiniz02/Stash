@@ -12,6 +12,7 @@ import { EntryFeed, FeedSkeleton } from "./entry-feed";
 import { EntryCard } from "./entry-card";
 import { SelectionBar } from "./selection-bar";
 import { useGroups } from "@/lib/data/groups";
+import { InboxDnd } from "./dnd";
 import type { Entry } from "@/lib/types";
 
 export function LayoutToggle({ value, onChange }: { value: "list" | "grid"; onChange: (v: "list" | "grid") => void }) {
@@ -110,7 +111,7 @@ export function EntriesView({
       ? { icon: Hash, title: "No entries with this tag", description: "Tags you add to entries show up here." }
       : (EMPTY[filter.view ?? "inbox"] ?? EMPTY.inbox);
 
-  return (
+  const content = (
     <>
       {pinnedEntries.length > 0 && (
         <section aria-label="Pinned" className="mb-6">
@@ -120,7 +121,7 @@ export function EntriesView({
           <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 scrollbar-none md:-mx-8 md:px-8">
             {pinnedEntries.map((e) => (
               <div key={e.id} className="w-64 shrink-0 snap-start sm:w-72">
-                <EntryCard entry={e} layout="grid" />
+                <EntryCard entry={e} layout="grid" noDrag />
               </div>
             ))}
           </div>
@@ -137,6 +138,19 @@ export function EntriesView({
           fetchNextPage={() => void query.fetchNextPage()}
           groups={isInbox ? (groups ?? []) : undefined}
         />
+      )}
+    </>
+  );
+
+  return (
+    <>
+      {/* Drag one entry onto another to group them (Inbox "All" view, where groups are shown). */}
+      {isInbox ? (
+        <InboxDnd entries={entries} groups={groups ?? []}>
+          {content}
+        </InboxDnd>
+      ) : (
+        content
       )}
       <SelectionBar entries={entries} />
     </>

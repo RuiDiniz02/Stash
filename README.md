@@ -19,6 +19,7 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 | **Entries** | Edit title, note, description, link; add/remove attachments; pin, favorite, archive, delete (files removed from Storage too); share via the Web Share API (including files where supported) or copy. Right‑side detail panel on desktop, full‑screen sheet on mobile, deep‑linkable with `?entry=<id>`. |
 | **Link previews** | Server‑side Open Graph/oEmbed fetch (`/api/link-preview`) with SSRF protection. YouTube, Vimeo, TikTok, Spotify and Reddit use their public oEmbed endpoints. YouTube/Vimeo play inline (they allow embedding). Other platforms show a card linking to the original. |
 | **Groups** (v1.1) | Select several Inbox entries (Select button, long‑press on touch, or the checkbox on hover) and group them into one idea. Groups expand/collapse in the Inbox and can be renamed, ungrouped, or have entries added/removed. Entries are never copied; a group disappears automatically when its last entry leaves it. |
+| **Drag to group** (v1.2) | Like folders on an iPhone: hold an entry (≈0.3 s on touch, or drag with the mouse) and drop it on another entry to create a group, or on a group to add it. The new group asks for a name right away; confirming the name saves it as a collection with the same name (or links an existing one). The database keeps that collection in step with the group; ungrouping keeps the collection. |
 | **Undo instead of confirmations** (v1.1) | Delete, archive, ungroup, remove from group/collection and reminder deletion apply at once with an Undo toast. Deletes are committed after the 5‑second undo window. |
 | **Collections** | Create, rename, change icon/colour, reorder (drag on desktop, or Move up/down), delete. Entries can be in several collections. One‑click “suggested collections”. Capture directly into a collection. |
 | **Tags** | Autocomplete tag input, tag browsing in sidebar and search. |
@@ -57,7 +58,7 @@ On **Android** (Chrome and Edge), installing the PWA adds Stash to the system sh
 
 ## Versions
 
-The version shown in the app (sidebar, end of the Inbox on mobile, Settings, launch screen) comes from `version` in `package.json`. Bump it with each release: 1.0 = first release with launch screen; 1.1 = groups, multi‑select, undo, collection sheet, compact mobile header.
+The version shown in the app (sidebar, end of the Inbox on mobile, Settings, launch screen) comes from `version` in `package.json`. Bump it with each release: 1.0 = first release with launch screen; 1.1 = groups, multi‑select, undo, collection sheet, compact mobile header; 1.2 = drag one entry onto another to group, named groups become collections, logo in the mobile header goes to the Inbox.
 
 ## Getting started (local)
 
@@ -69,7 +70,7 @@ npm install
 
 ### 1. Create the database
 
-In your Supabase project, open **SQL Editor** and run each file in `supabase/migrations/` in order (`20261028120000_init.sql`, then `20261030120000_entry_groups.sql`).
+In your Supabase project, open **SQL Editor** and run each file in `supabase/migrations/` in order (`20261028120000_init.sql`, `20261030120000_entry_groups.sql`, `20261030150000_group_collections.sql`).
 Or use the Supabase CLI:
 
 ```bash
