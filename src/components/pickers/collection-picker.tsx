@@ -28,7 +28,10 @@ export function CollectionPicker({ value, onChange }: { value: string[]; onChang
     }
     try {
       const [created] = await create.mutateAsync([{ name: trimmed, icon: "folder", color: "indigo" }]);
-      if (created) onChange([...value, created.id]);
+      if (created) {
+        onChange([...value, created.id]);
+        toast.success(`Created ${created.name}`);
+      }
       setName("");
       setAdding(false);
     } catch (err) {
@@ -85,10 +88,16 @@ export function CollectionPicker({ value, onChange }: { value: string[]; onChang
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="inline-flex h-8 items-center gap-1 rounded-full border border-dashed px-3 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          className={cn(
+            "inline-flex h-8 items-center gap-1 rounded-full border border-dashed px-3 text-[13px] hover:bg-accent hover:text-foreground",
+            collections?.length ? "text-muted-foreground" : "border-primary/50 text-primary",
+          )}
         >
-          <Plus className="size-3.5" /> New
+          <Plus className="size-3.5" /> Create collection
         </button>
+      )}
+      {!adding && collections && collections.length === 0 && (
+        <p className="w-full text-xs text-muted-foreground">No collections yet. Create one and this entry goes straight into it.</p>
       )}
     </div>
   );

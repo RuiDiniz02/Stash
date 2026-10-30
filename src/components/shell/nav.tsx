@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   CalendarDays,
   ChevronsLeft,
@@ -195,7 +196,7 @@ const MOBILE_NAV = [
   { href: "/collections", label: "Collections", icon: Folder },
   null,
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/search", label: "Search", icon: Search },
+  { href: "/media", label: "Media", icon: Images },
 ] as const;
 
 export function BottomNav() {
@@ -245,24 +246,79 @@ export function PageHeader({
   actions,
   children,
   back,
+  search = true,
 }: {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   actions?: React.ReactNode;
   children?: React.ReactNode;
   back?: React.ReactNode;
+  /** Show the search icon that expands into a field. */
+  search?: boolean;
 }) {
+  const [searching, setSearching] = useState(false);
   return (
     <header className="sticky top-0 z-30 border-b border-transparent bg-background/80 pt-safe backdrop-blur-xl backdrop-saturate-150 [&:has(+*)]:border-border/60">
-      <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 md:px-8">
-        {back}
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[17px] font-semibold tracking-tight">{title}</h1>
-          {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
-        </div>
-        {actions && <div className="flex items-center gap-1">{actions}</div>}
+      <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4 md:px-8">
+        {searching ? (
+          <HeaderSearchField onClose={() => setSearching(false)} />
+        ) : (
+          <>
+            {back}
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-[17px] font-semibold tracking-tight">{title}</h1>
+              {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+            </div>
+            <div className="flex items-center gap-1">
+              {search && (
+                <button
+                  onClick={() => setSearching(true)}
+                  aria-label="Search"
+                  className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <Search className="size-[18px]" />
+                </button>
+              )}
+              {actions}
+            </div>
+          </>
+        )}
       </div>
       {children && <div className="mx-auto max-w-5xl px-4 pb-3 md:px-8">{children}</div>}
     </header>
+  );
+}
+
+/** Inline search field that replaces the header title; Enter opens the results page. */
+function HeaderSearchField({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  return (
+    <form
+      role="search"
+      className="flex flex-1 items-center gap-2 animate-in fade-in-0 slide-in-from-right-2 duration-150"
+      onSubmit={(e) => {
+        e.preventDefault();
+        router.push(q.trim() ? `/search?q=${encodeURIComponent(q.trim())}` : "/search");
+      }}
+    >
+      <div className="relative flex-1">
+        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          autoFocus
+          type="search"
+          enterKeyHint="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && onClose()}
+          placeholder="Search your stash"
+          aria-label="Search your stash"
+          className="h-10 w-full rounded-xl bg-muted pr-3 pl-9 text-[16px] outline-none focus-visible:ring-3 focus-visible:ring-primary/15 sm:text-sm [&::-webkit-search-cancel-button]:hidden"
+        />
+      </div>
+      <button type="button" onClick={onClose} className="h-10 px-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+        Cancel
+      </button>
+    </form>
   );
 }

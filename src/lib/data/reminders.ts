@@ -3,7 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addDays, addMonths, addWeeks, addYears } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 import { invalidateData } from "@/lib/data/keys";
+import { toastWithUndo } from "@/lib/undo";
 import type { Reminder, RepeatInterval } from "@/lib/types";
 
 export type ReminderWithEntry = Reminder & {
@@ -172,5 +174,21 @@ export function useReminderMutations(userId: string) {
     onSettled: done,
   });
 
-  return { create, update, toggleComplete, remove, snooze };
+  /** Deletes at once and offers Undo, which recreates the same reminder (same id). */
+  const removeWithUndo = (r: Reminder) => {
+    remove.mutate(r.id, {
+      onSuccess: () =>
+        toastWithUndo("Reminder deleted", async () => {
+          const { id, title, notes, due_at, all_day, repeat, entry_id, completed_at } = r;
+          const { error } = await supabase
+            .from("reminders")
+            .insert({ id, user_id: userId, title, notes, due_at, all_day, repeat, entry_id, completed_at });
+          if (error) toast.error(error.message);
+          await done();
+        }),
+      onError: (e) => toast.error(e.message),
+    });
+  };
+
+  return { create, update, toggleComplete, remove, removeWithUndo, snooze };
 }

@@ -1,9 +1,10 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { format, isPast } from "date-fns";
-import { Bell, CloudOff, Folder, Hash, Pin, Repeat, Star } from "lucide-react";
+import { Bell, Check, CloudOff, Folder, Hash, Layers, Pin, Repeat, Star } from "lucide-react";
 import { useCollections } from "@/lib/data/collections";
+import { useGroups } from "@/lib/data/groups";
 import type { Entry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useStash } from "@/components/shell/stash-context";
@@ -11,6 +12,9 @@ import { Lightbox } from "@/components/media/lightbox";
 import { AttachmentAudio, AttachmentFile, MediaGrid } from "./media";
 import { LinkCard } from "./link-card";
 import { EntryActions } from "./entry-actions";
+import { useSelection } from "./selection";
+
+const LONG_PRESS_MS = 450;
 
 function nextReminder(entry: Entry) {
   return entry.reminders.find((r) => !r.completed_at) ?? null;
@@ -19,40 +23,105 @@ function nextReminder(entry: Entry) {
 export const EntryCard = memo(function EntryCard({
   entry,
   layout = "list",
+  inGroup = false,
 }: {
   entry: Entry;
   layout?: "list" | "grid";
+  /** Rendered inside a group card (hides the group chip). */
+  inGroup?: boolean;
 }) {
   const { openEntry } = useStash();
   const { data: collections } = useCollections();
+  const { data: groups } = useGroups();
+  const selection = useSelection();
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
 
   const visual = entry.attachments.filter((a) => a.kind === "image" || a.kind === "video");
   const audio = entry.attachments.filter((a) => a.kind === "audio");
   const files = entry.attachments.filter((a) => a.kind === "file");
   const reminder = nextReminder(entry);
   const entryCollections = (collections ?? []).filter((c) => entry.collection_ids.includes(c.id));
+  const group = !inGroup && entry.group_id ? groups?.find((g) => g.id === entry.group_id) : undefined;
   const isGrid = layout === "grid";
+  const selecting = !!selection?.active && !entry.pending;
+  const selected = !!selection?.isSelected(entry.id);
+
+  const activate = () => {
+    if (entry.pending) return;
+    if (longPressed.current) {
+      longPressed.current = false;
+      return;
+    }
+    if (selecting) selection!.toggle(entry.id);
+    else openEntry(entry.id);
+  };
+
+  const cancelPress = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
 
   return (
     <article
       role="button"
       tabIndex={0}
       aria-label={entry.title ?? entry.body?.slice(0, 60) ?? entry.url ?? "Entry"}
-      onClick={() => !entry.pending && openEntry(entry.id)}
+      aria-pressed={selecting ? selected : undefined}
+      onClick={activate}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          if (!entry.pending) openEntry(entry.id);
+          activate();
         }
       }}
+      onPointerDown={(e) => {
+        // Long-press on touch screens starts multi-select.
+        if (e.pointerType !== "touch" || !selection || entry.pending) return;
+        cancelPress();
+        pressTimer.current = setTimeout(() => {
+          longPressed.current = true;
+          if (selection.active) selection.toggle(entry.id);
+          else selection.start(entry.id);
+        }, LONG_PRESS_MS);
+      }}
+      onPointerUp={cancelPress}
+      onPointerLeave={cancelPress}
+      onPointerCancel={cancelPress}
+      onContextMenu={(e) => {
+        // Suppress the browser's long-press menu while a long-press selection is in progress.
+        if (pressTimer.current || longPressed.current) e.preventDefault();
+      }}
       className={cn(
-        "group relative flex flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left shadow-soft transition-[box-shadow,border-color,transform] duration-200 outline-none hover:border-border hover:shadow-float focus-visible:ring-3 focus-visible:ring-ring/40 animate-fade-up",
+        "group relative flex flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left shadow-soft transition-[box-shadow,border-color,transform] duration-200 outline-none select-none hover:border-border hover:shadow-float focus-visible:ring-3 focus-visible:ring-ring/40 animate-fade-up sm:select-auto",
         isGrid && "mb-3 break-inside-avoid",
         entry.pending && "opacity-70",
+        selected && "ring-2 ring-primary",
+        selecting && "pl-11",
       )}
     >
+      {selection && !entry.pending && (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={selected}
+          aria-label={selected ? "Deselect entry" : "Select entry"}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (selection.active) selection.toggle(entry.id);
+            else selection.start(entry.id);
+          }}
+          className={cn(
+            "absolute top-3 left-3 z-10 grid size-6 place-items-center rounded-full border-2 transition",
+            selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40 bg-card",
+            !selecting && "hidden sm:grid sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100",
+          )}
+        >
+          {selected && <Check className="size-3.5" strokeWidth={3} />}
+        </button>
+      )}
       {(entry.title || entry.is_pinned || entry.is_favorite) && (
         <div className="flex items-start gap-2 pr-8">
           {entry.title && <h3 className="min-w-0 flex-1 text-[15px] leading-snug font-semibold tracking-tight">{entry.title}</h3>}
@@ -63,7 +132,7 @@ export const EntryCard = memo(function EntryCard({
         </div>
       )}
 
-      {visual.length > 0 && <MediaGrid items={visual} onOpen={setLightbox} className={cn(!isGrid && "max-w-md")} />}
+      {visual.length > 0 && <MediaGrid items={visual} onOpen={selecting ? undefined : setLightbox} className={cn(!isGrid && "max-w-md")} />}
 
       {entry.body && (
         <p
@@ -107,6 +176,12 @@ export const EntryCard = memo(function EntryCard({
             {format(new Date(reminder.due_at), reminder.all_day ? "EEE d MMM" : "EEE d MMM, HH:mm")}
           </span>
         )}
+        {group && (
+          <span className="inline-flex items-center gap-1">
+            <Layers className="size-3" />
+            {group.title}
+          </span>
+        )}
         {entryCollections.map((c) => (
           <span key={c.id} className="inline-flex items-center gap-1">
             <Folder className="size-3" />
@@ -121,7 +196,7 @@ export const EntryCard = memo(function EntryCard({
         ))}
       </footer>
 
-      {!entry.pending && (
+      {!entry.pending && !selecting && (
         <div className="absolute top-2 right-2 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:has-[[data-state=open]]:opacity-100">
           <EntryActions entry={entry} />
         </div>

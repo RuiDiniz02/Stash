@@ -45,6 +45,7 @@ export function useCapture() {
           is_pinned: false,
           is_favorite: false,
           is_archived: false,
+          group_id: null,
           created_at,
           updated_at: created_at,
           attachments: [],

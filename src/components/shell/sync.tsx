@@ -10,7 +10,7 @@ import { invalidateData } from "@/lib/data/keys";
 import { flushOutbox, getQueued, subscribeOutbox } from "@/lib/outbox";
 import { useUser } from "@/lib/user-context";
 
-const TABLES = ["entries", "attachments", "collections", "entry_collections", "tags", "entry_tags", "reminders"] as const;
+const TABLES = ["entries", "attachments", "collections", "entry_collections", "tags", "entry_tags", "reminders", "entry_groups"] as const;
 
 /** Cross-device sync: Postgres Changes (RLS-filtered) invalidate the affected queries. */
 export function RealtimeSync() {

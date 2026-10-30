@@ -6,11 +6,12 @@ import { STORAGE_BUCKET, MAX_FILE_BYTES } from "@/lib/env";
 import { attachmentKind, prepareFile, safeFileName } from "@/lib/files";
 import { extractUrl, isBareUrl, uuid } from "@/lib/utils";
 import { invalidateData } from "@/lib/data/keys";
+import { deferWithUndo, toastWithUndo } from "@/lib/undo";
 import { ensureTags } from "@/lib/data/tags";
 import type { Attachment, Entry, EntryKind, EntryRow, LinkPreview, Reminder, RepeatInterval } from "@/lib/types";
 
 export const ENTRY_COLUMNS =
-  "id,user_id,kind,title,body,description,url,link_preview,is_pinned,is_favorite,is_archived,created_at,updated_at";
+  "id,user_id,kind,title,body,description,url,link_preview,is_pinned,is_favorite,is_archived,group_id,created_at,updated_at";
 export const ENTRY_SELECT = `${ENTRY_COLUMNS},attachments(*),entry_collections(collection_id),entry_tags(tags(id,name)),reminders(*)`;
 
 export const PAGE_SIZE = 30;
@@ -385,16 +386,69 @@ export function useUpdateEntry() {
   });
 }
 
-export function useDeleteEntries() {
+/** Removes entries from every cached list (inbox pages, search results, pinned strip). */
+export function hideEntriesInCache(qc: ReturnType<typeof useQueryClient>, ids: string[]) {
+  const drop = new Set(ids);
+  qc.setQueriesData<InfiniteData<Entry[]> | Entry[]>({ queryKey: ["entries"] }, (data) => {
+    if (!data) return data;
+    if (Array.isArray(data)) return data.filter((e) => !drop.has(e.id));
+    return { ...data, pages: data.pages.map((p) => p.filter((e) => !drop.has(e.id))) };
+  });
+  qc.setQueriesData<Entry[]>({ queryKey: ["search"] }, (data) => data?.filter((e) => !drop.has(e.id)));
+}
+
+/**
+ * Entry actions shared by menus, the detail panel and multi-select. Every destructive or
+ * reversible action gives immediate feedback with Undo instead of a confirmation dialog.
+ */
+export function useEntryCommands() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: deleteEntries,
-    onMutate: (ids) => {
-      qc.setQueriesData<InfiniteData<Entry[]>>({ queryKey: ["entries"] }, (data) => {
-        if (!data || !("pages" in data)) return data;
-        return { ...data, pages: data.pages.map((p) => p.filter((e) => !ids.includes(e.id))) };
+  const refresh = () => invalidateData(qc);
+
+  return {
+    /** Hidden at once; files and rows are deleted when the undo window closes. */
+    remove(ids: string[], onHidden?: () => void) {
+      if (!ids.length) return;
+      hideEntriesInCache(qc, ids);
+      onHidden?.();
+      deferWithUndo({
+        message: ids.length === 1 ? "Entry deleted" : `${ids.length} entries deleted`,
+        commit: () => deleteEntries(ids).finally(refresh),
+        restore: () => void refresh(),
       });
     },
-    onSettled: () => invalidateData(qc),
-  });
+
+    async setArchived(ids: string[], archived: boolean) {
+      if (!ids.length) return;
+      hideEntriesInCache(qc, ids);
+      const { error } = await createClient().from("entries").update({ is_archived: archived }).in("id", ids);
+      await refresh();
+      if (error) throw error;
+      const what = ids.length === 1 ? "Entry" : `${ids.length} entries`;
+      toastWithUndo(archived ? `${what} archived` : `${what} restored`, async () => {
+        await createClient().from("entries").update({ is_archived: !archived }).in("id", ids);
+        await refresh();
+      });
+    },
+
+    /** Removes one attachment after the undo window; the file stays hidden meanwhile. */
+    removeAttachment(entry: Entry, att: Attachment) {
+      const hide = (e: Entry | null | undefined) =>
+        e && e.id === entry.id ? { ...e, attachments: e.attachments.filter((a) => a.id !== att.id) } : e;
+      qc.setQueryData<Entry | null>(["entry", entry.id], (e) => hide(e) ?? null);
+      qc.setQueriesData<InfiniteData<Entry[]>>({ queryKey: ["entries"] }, (data) =>
+        data && "pages" in data ? { ...data, pages: data.pages.map((p) => p.map((e) => hide(e)!)) } : data,
+      );
+      deferWithUndo({
+        message: "File removed",
+        commit: async () => {
+          await deleteAttachment(att);
+          const remaining = entry.attachments.filter((a) => a.id !== att.id).map((a) => a.kind);
+          await createClient().from("entries").update({ kind: deriveKind(entry.url, remaining) }).eq("id", entry.id);
+          await refresh();
+        },
+        restore: () => void refresh(),
+      });
+    },
+  };
 }

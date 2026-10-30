@@ -16,6 +16,27 @@ export const SUGGESTED_COLLECTIONS: { name: string; icon: string; color: string 
   { name: "Websites & resources", icon: "globe", color: "indigo" },
 ];
 
+export async function addEntriesToCollection(userId: string, entryIds: string[], collectionId: string) {
+  if (!entryIds.length) return;
+  const { error } = await createClient()
+    .from("entry_collections")
+    .upsert(
+      entryIds.map((entry_id) => ({ entry_id, collection_id: collectionId, user_id: userId })),
+      { onConflict: "entry_id,collection_id", ignoreDuplicates: true },
+    );
+  if (error) throw error;
+}
+
+export async function removeEntriesFromCollection(entryIds: string[], collectionId: string) {
+  if (!entryIds.length) return;
+  const { error } = await createClient()
+    .from("entry_collections")
+    .delete()
+    .eq("collection_id", collectionId)
+    .in("entry_id", entryIds);
+  if (error) throw error;
+}
+
 export function useCollections() {
   return useQuery({
     queryKey: ["collections"],

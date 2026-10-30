@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -8,32 +8,30 @@ import {
   Copy,
   Ellipsis,
   ExternalLink,
-  Folder,
+  FolderPlus,
+  Layers,
   Pin,
   PinOff,
   Share2,
   Star,
   StarOff,
   Trash2,
+  Ungroup,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
-import { confirm } from "@/components/ui/confirm";
-import { useCollections } from "@/lib/data/collections";
-import { setEntryCollections, useDeleteEntries, useUpdateEntry } from "@/lib/data/entries";
-import { invalidateData } from "@/lib/data/keys";
-import { getSignedUrl } from "@/lib/data/signed-urls";
+import { CollectionSheet } from "@/components/collections/collection-sheet";
+import { useEntryCommands, useUpdateEntry } from "@/lib/data/entries";
+import { useGroupCommands } from "@/lib/data/groups";
 import { useUser } from "@/lib/user-context";
+import { GroupSheet } from "./group-sheet";
+import { getSignedUrl } from "@/lib/data/signed-urls";
 import type { Entry } from "@/lib/types";
 import { cn, errorMessage } from "@/lib/utils";
 import { useStash } from "@/components/shell/stash-context";
@@ -76,118 +74,92 @@ export async function shareEntry(entry: Entry) {
 }
 
 export function EntryActions({ entry, className, align = "end" }: { entry: Entry; className?: string; align?: "start" | "end" }) {
-  const user = useUser();
-  const qc = useQueryClient();
-  const { openReminder } = useStash();
+  const { openReminder, closeEntry } = useStash();
   const update = useUpdateEntry();
-  const del = useDeleteEntries();
-  const { data: collections } = useCollections();
+  const commands = useEntryCommands();
+  const [collectionsOpen, setCollectionsOpen] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const user = useUser();
+  const groupCommands = useGroupCommands(user.id);
 
-  const patch = (p: Parameters<typeof update.mutate>[0]["patch"], message?: string) =>
-    update.mutate(
-      { id: entry.id, patch: p },
-      {
-        onSuccess: () => message && toast.success(message),
-        onError: (e) => toast.error(errorMessage(e)),
-      },
-    );
+  const toggle = (patch: Parameters<typeof update.mutate>[0]["patch"]) =>
+    update.mutate({ id: entry.id, patch }, { onError: (e) => toast.error(errorMessage(e)) });
 
-  async function toggleCollection(id: string) {
-    const next = entry.collection_ids.includes(id) ? entry.collection_ids.filter((c) => c !== id) : [...entry.collection_ids, id];
-    try {
-      await setEntryCollections(user.id, entry.id, next);
-      await invalidateData(qc);
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
-  }
-
-  async function onDelete() {
-    const ok = await confirm({
-      title: "Delete this entry?",
-      description: entry.attachments.length
-        ? `This also deletes ${entry.attachments.length} attached file${entry.attachments.length > 1 ? "s" : ""}. This can't be undone.`
-        : "This can't be undone.",
-      confirmLabel: "Delete",
-      destructive: true,
-    });
-    if (!ok) return;
-    del.mutate([entry.id], {
-      onSuccess: () => toast.success("Deleted"),
-      onError: (e) => toast.error(errorMessage(e)),
-    });
-  }
+  const closeIfOpen = () => {
+    if (new URLSearchParams(window.location.search).get("entry") === entry.id) closeEntry();
+  };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        onClick={(e) => e.stopPropagation()}
-        className={cn(
-          "grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent",
-          className,
-        )}
-        aria-label="Entry actions"
-      >
-        <Ellipsis className="size-4" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} onClick={(e) => e.stopPropagation()} className="w-56">
-        <DropdownMenuItem onSelect={() => patch({ is_pinned: !entry.is_pinned }, entry.is_pinned ? "Unpinned" : "Pinned")}>
-          {entry.is_pinned ? <PinOff /> : <Pin />} {entry.is_pinned ? "Unpin" : "Pin to top"}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => patch({ is_favorite: !entry.is_favorite })}>
-          {entry.is_favorite ? <StarOff /> : <Star />} {entry.is_favorite ? "Remove favorite" : "Favorite"}
-        </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <Folder /> Collections
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-52">
-            {collections?.length ? (
-              collections.map((c) => (
-                <DropdownMenuCheckboxItem
-                  key={c.id}
-                  checked={entry.collection_ids.includes(c.id)}
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    void toggleCollection(c.id);
-                  }}
-                >
-                  <span className="truncate">{c.name}</span>
-                </DropdownMenuCheckboxItem>
-              ))
-            ) : (
-              <p className="px-2.5 py-2 text-xs text-muted-foreground">No collections yet</p>
-            )}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuItem onSelect={() => openReminder({ entryId: entry.id, title: entry.title ?? undefined })}>
-          <Bell /> Remind me…
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        {entry.url && (
-          <DropdownMenuItem onSelect={() => window.open(entry.url!, "_blank", "noopener,noreferrer")}>
-            <ExternalLink /> Open link
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuItem onSelect={() => void shareEntry(entry)}>
-          <Share2 /> Share…
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={async () => {
-            await navigator.clipboard.writeText(entry.url ?? entryShareText(entry));
-            toast.success("Copied");
-          }}
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            "grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent",
+            className,
+          )}
+          aria-label="Entry actions"
         >
-          <Copy /> Copy {entry.url ? "link" : "text"}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => patch({ is_archived: !entry.is_archived }, entry.is_archived ? "Restored" : "Archived")}>
-          {entry.is_archived ? <ArchiveRestore /> : <Archive />} {entry.is_archived ? "Unarchive" : "Archive"}
-        </DropdownMenuItem>
-        <DropdownMenuItem destructive onSelect={() => void onDelete()}>
-          <Trash2 /> Delete
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <Ellipsis className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align={align} onClick={(e) => e.stopPropagation()} className="w-56">
+          <DropdownMenuItem onSelect={() => toggle({ is_pinned: !entry.is_pinned })}>
+            {entry.is_pinned ? <PinOff /> : <Pin />} {entry.is_pinned ? "Unpin" : "Pin to top"}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => toggle({ is_favorite: !entry.is_favorite })}>
+            {entry.is_favorite ? <StarOff /> : <Star />} {entry.is_favorite ? "Remove favorite" : "Favorite"}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setCollectionsOpen(true)}>
+            <FolderPlus /> Add to collection…
+          </DropdownMenuItem>
+          {entry.group_id ? (
+            <DropdownMenuItem onSelect={() => groupCommands.removeEntries([entry]).catch((e) => toast.error(errorMessage(e)))}>
+              <Ungroup /> Remove from group
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onSelect={() => setGroupOpen(true)}>
+              <Layers /> Add to group…
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onSelect={() => openReminder({ entryId: entry.id, title: entry.title ?? undefined })}>
+            <Bell /> Remind me…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {entry.url && (
+            <DropdownMenuItem onSelect={() => window.open(entry.url!, "_blank", "noopener,noreferrer")}>
+              <ExternalLink /> Open link
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onSelect={() => void shareEntry(entry)}>
+            <Share2 /> Share…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={async () => {
+              await navigator.clipboard.writeText(entry.url ?? entryShareText(entry));
+              toast.success("Copied");
+            }}
+          >
+            <Copy /> Copy {entry.url ? "link" : "text"}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={() => {
+              closeIfOpen();
+              commands.setArchived([entry.id], !entry.is_archived).catch((e) => toast.error(errorMessage(e)));
+            }}
+          >
+            {entry.is_archived ? <ArchiveRestore /> : <Archive />} {entry.is_archived ? "Unarchive" : "Archive"}
+          </DropdownMenuItem>
+          <DropdownMenuItem destructive onSelect={() => commands.remove([entry.id], closeIfOpen)}>
+            <Trash2 /> Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* React events bubble through portals; keep sheet clicks from reaching the card. */}
+      <div className="contents" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <CollectionSheet open={collectionsOpen} onOpenChange={setCollectionsOpen} entries={[entry]} />
+        <GroupSheet open={groupOpen} onOpenChange={setGroupOpen} entries={[entry]} />
+      </div>
+    </>
   );
 }

@@ -8,18 +8,17 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ErrorState, Skeleton, Spinner } from "@/components/ui/misc";
-import { confirm } from "@/components/ui/confirm";
 import { TagInput } from "@/components/pickers/tag-input";
 import { CollectionPicker } from "@/components/pickers/collection-picker";
 import { Lightbox } from "@/components/media/lightbox";
 import {
   addAttachments,
-  deleteAttachment,
   deriveKind,
   refreshLinkPreview,
   setEntryCollections,
   setEntryTags,
   useEntry,
+  useEntryCommands,
   useUpdateEntry,
 } from "@/lib/data/entries";
 import { invalidateData } from "@/lib/data/keys";
@@ -103,6 +102,7 @@ function EntryEditor({ entry }: { entry: Entry }) {
   const update = useUpdateEntry();
   const { openReminder } = useStash();
   const reminders = useReminderMutations(user.id);
+  const commands = useEntryCommands();
   const [title, setTitle] = useState(entry.title ?? "");
   const [body, setBody] = useState(entry.body ?? "");
   const [description, setDescription] = useState(entry.description ?? "");
@@ -186,16 +186,8 @@ function EntryEditor({ entry }: { entry: Entry }) {
     }
   }
 
-  async function onRemoveAttachment(att: Attachment) {
-    const ok = await confirm({ title: "Remove this file?", description: att.file_name ?? undefined, confirmLabel: "Remove", destructive: true });
-    if (!ok) return;
-    try {
-      await deleteAttachment(att);
-      const remaining = entry.attachments.filter((a) => a.id !== att.id).map((a) => a.kind);
-      await update.mutateAsync({ id: entry.id, patch: { kind: deriveKind(entry.url, remaining) } });
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
+  function onRemoveAttachment(att: Attachment) {
+    commands.removeAttachment(entry, att);
   }
 
   return (
@@ -388,7 +380,7 @@ function EntryEditor({ entry }: { entry: Entry }) {
                     </span>
                   </button>
                   <button
-                    onClick={() => reminders.remove.mutate(r.id)}
+                    onClick={() => reminders.removeWithUndo(r)}
                     aria-label="Delete reminder"
                     className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
                   >

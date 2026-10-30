@@ -91,6 +91,7 @@ export interface EntryRow {
   is_pinned: boolean;
   is_favorite: boolean;
   is_archived: boolean;
+  group_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -109,4 +110,11 @@ export interface Profile {
   id: string;
   display_name: string | null;
   accent: Accent;
+}
+
+export interface EntryGroup {
+  id: string;
+  title: string;
+  created_at: string;
+  entry_count: number;
 }

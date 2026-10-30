@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { format, isThisYear, isToday, isYesterday, differenceInCalendarDays } from "date-fns";
-import type { Entry } from "@/lib/types";
+import type { Entry, EntryGroup } from "@/lib/types";
 import { Skeleton, Spinner } from "@/components/ui/misc";
 import { EntryCard } from "./entry-card";
+import { GroupCard } from "./group-card";
 
 function dayLabel(d: Date) {
   if (isToday(d)) return "Today";
@@ -13,16 +14,43 @@ function dayLabel(d: Date) {
   return format(d, isThisYear(d) ? "EEEE, d MMMM" : "d MMMM yyyy");
 }
 
-export function groupByDay(entries: Entry[]) {
-  const groups: { key: string; label: string; items: Entry[] }[] = [];
+type FeedItem =
+  | { type: "entry"; key: string; at: string; entry: Entry }
+  | { type: "group"; key: string; at: string; group: Pick<EntryGroup, "id" | "title">; entries: Entry[] };
+
+/** Folds grouped entries into one item placed where the group's newest loaded entry is. */
+function toItems(entries: Entry[], groups?: EntryGroup[]): FeedItem[] {
+  if (!groups) return entries.map((e) => ({ type: "entry", key: e.id, at: e.created_at, entry: e }));
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const items: FeedItem[] = [];
+  const placed = new Map<string, Extract<FeedItem, { type: "group" }>>();
   for (const e of entries) {
-    const d = new Date(e.created_at);
-    const key = format(d, "yyyy-MM-dd");
-    const last = groups[groups.length - 1];
-    if (last?.key === key) last.items.push(e);
-    else groups.push({ key, label: dayLabel(d), items: [e] });
+    const group = e.group_id ? byId.get(e.group_id) : undefined;
+    if (!group) {
+      items.push({ type: "entry", key: e.id, at: e.created_at, entry: e });
+      continue;
+    }
+    const existing = placed.get(group.id);
+    if (existing) existing.entries.push(e);
+    else {
+      const item = { type: "group" as const, key: `g-${group.id}`, at: e.created_at, group, entries: [e] };
+      placed.set(group.id, item);
+      items.push(item);
+    }
   }
-  return groups;
+  return items;
+}
+
+function groupByDay(items: FeedItem[]) {
+  const days: { key: string; label: string; items: FeedItem[] }[] = [];
+  for (const item of items) {
+    const d = new Date(item.at);
+    const key = format(d, "yyyy-MM-dd");
+    const last = days[days.length - 1];
+    if (last?.key === key) last.items.push(item);
+    else days.push({ key, label: dayLabel(d), items: [item] });
+  }
+  return days;
 }
 
 export function EntryFeed({
@@ -32,16 +60,23 @@ export function EntryFeed({
   isFetchingNextPage,
   fetchNextPage,
   grouped = true,
+  groups,
 }: {
   entries: Entry[];
   layout: "list" | "grid";
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
   fetchNextPage?: () => void;
+  /** Group headers by day. */
   grouped?: boolean;
+  /** When given, entries in a group are shown together in one group card. */
+  groups?: EntryGroup[];
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
-  const groups = useMemo(() => (grouped ? groupByDay(entries) : [{ key: "all", label: "", items: entries }]), [entries, grouped]);
+  const days = useMemo(() => {
+    const items = toItems(entries, groups);
+    return grouped ? groupByDay(items) : [{ key: "all", label: "", items }];
+  }, [entries, groups, grouped]);
 
   useEffect(() => {
     const el = sentinel.current;
@@ -56,28 +91,23 @@ export function EntryFeed({
     return () => io.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  const render = (item: FeedItem) =>
+    item.type === "group" ? (
+      <GroupCard key={item.key} group={item.group} entries={item.entries} layout={layout} />
+    ) : (
+      <EntryCard key={item.key} entry={item.entry} layout={layout} />
+    );
+
   return (
     <div>
-      {groups.map((g) => (
-        <section key={g.key} aria-label={g.label || undefined} className="mb-6">
-          {g.label && (
+      {days.map((d) => (
+        <section key={d.key} aria-label={d.label || undefined} className="mb-6">
+          {d.label && (
             <h2 className="sticky top-14 z-10 -mx-1 mb-2 inline-block rounded-md bg-background/80 px-1 py-1 text-xs font-semibold tracking-wide text-muted-foreground backdrop-blur">
-              {g.label}
+              {d.label}
             </h2>
           )}
-          {layout === "grid" ? (
-            <div className="masonry">
-              {g.items.map((e) => (
-                <EntryCard key={e.id} entry={e} layout="grid" />
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {g.items.map((e) => (
-                <EntryCard key={e.id} entry={e} layout="list" />
-              ))}
-            </div>
-          )}
+          {layout === "grid" ? <div className="masonry">{d.items.map(render)}</div> : <div className="flex flex-col gap-3">{d.items.map(render)}</div>}
         </section>
       ))}
       <div ref={sentinel} aria-hidden className="h-px" />

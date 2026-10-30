@@ -13,6 +13,7 @@ import { useSearch } from "@/lib/data/search";
 import { useUser } from "@/lib/user-context";
 import { errorMessage } from "@/lib/utils";
 import type { ReminderPrefill } from "@/components/shell/stash-context";
+import type { Reminder } from "@/lib/types";
 
 export function ReminderDialog({
   open,
@@ -24,7 +25,7 @@ export function ReminderDialog({
   prefill: ReminderPrefill | null;
 }) {
   const user = useUser();
-  const { create, update, remove } = useReminderMutations(user.id);
+  const { create, update, removeWithUndo } = useReminderMutations(user.id);
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [draft, setDraft] = useState<ReminderDraft>(defaultDraft());
@@ -124,7 +125,8 @@ export function ReminderDialog({
                 variant="ghost"
                 className="mr-auto text-destructive"
                 onClick={async () => {
-                  await remove.mutateAsync(prefill!.id!);
+                  const r = reminderFromPrefill(prefill!);
+                  if (r) removeWithUndo(r);
                   onOpenChange(false);
                 }}
               >
@@ -176,4 +178,23 @@ function EntryPicker({ onPick }: { onPick: (id: string) => void }) {
       </ul>
     </div>
   );
+}
+
+/** Rebuilds the stored reminder from the dialog's prefill so Undo can recreate it. */
+function reminderFromPrefill(p: ReminderPrefill): Reminder | null {
+  if (!p.id || !p.due_at) return null;
+  const now = new Date().toISOString();
+  return {
+    id: p.id,
+    user_id: "",
+    entry_id: p.entryId ?? null,
+    title: p.title ?? "Reminder",
+    notes: p.notes ?? null,
+    due_at: p.due_at,
+    all_day: p.all_day ?? false,
+    repeat: p.repeat ?? "none",
+    completed_at: null,
+    created_at: now,
+    updated_at: now,
+  };
 }

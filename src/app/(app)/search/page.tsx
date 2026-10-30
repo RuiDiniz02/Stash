@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Archive, FileText, Hash, Image as ImageIcon, Link2, Mic, Paperclip, Search as SearchIcon, Star, StickyNote, Video, X } from "lucide-react";
+import { Archive, FileText, Hash, Image as ImageIcon, Link2, Mic, Paperclip, Search as SearchIcon, SlidersHorizontal, Star, StickyNote, Video, X } from "lucide-react";
 import { PageHeader } from "@/components/shell/nav";
 import { Chip, EmptyState, ErrorState, Spinner } from "@/components/ui/misc";
 import { EntryFeed, FeedSkeleton } from "@/components/entries/entry-feed";
@@ -51,6 +51,7 @@ function Search() {
   const [favorites, setFavorites] = useState(false);
   const [archived, setArchived] = useState(false);
   const [range, setRange] = useState<SearchParams["range"]>("any");
+  const [showFilters, setShowFilters] = useState(false);
   const { data: collections } = useCollections();
   const { data: tags } = useTags();
 
@@ -89,7 +90,7 @@ function Search() {
 
   return (
     <>
-      <PageHeader title="Search">
+      <PageHeader title="Search" search={false}>
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 size-[18px] -translate-y-1/2 text-muted-foreground" />
           <input
@@ -101,7 +102,7 @@ function Search() {
             onChange={(e) => setText(e.target.value)}
             placeholder="Search notes, links, tags, collections…"
             aria-label="Search"
-            className="h-11 w-full rounded-xl border border-input bg-card pr-10 pl-10 text-[16px] outline-none transition focus-visible:border-primary/50 focus-visible:ring-4 focus-visible:ring-primary/10 [&::-webkit-search-cancel-button]:hidden"
+            className="h-10 w-full rounded-xl bg-muted pr-10 pl-10 text-[16px] outline-none transition focus-visible:bg-card focus-visible:ring-3 focus-visible:ring-primary/15 sm:text-sm [&::-webkit-search-cancel-button]:hidden"
           />
           {isFetching ? (
             <Spinner className="absolute top-1/2 right-3.5 -translate-y-1/2" />
@@ -121,12 +122,16 @@ function Search() {
           )}
         </div>
         <div className="-mx-4 mt-3 flex gap-1.5 overflow-x-auto px-4 scrollbar-none md:mx-0 md:px-0">
+          <Chip active={showFilters} onClick={() => setShowFilters(!showFilters)} aria-label="More filters">
+            <SlidersHorizontal /> Filters
+          </Chip>
           {KINDS.map((k) => (
             <Chip key={k.value} active={kinds.includes(k.value)} onClick={() => toggleKind(k.value)}>
               <k.icon /> {k.label}
             </Chip>
           ))}
         </div>
+        {(showFilters || favorites || archived || range !== "any" || collection || tag) && (
         <div className="-mx-4 mt-2 flex items-center gap-1.5 overflow-x-auto px-4 scrollbar-none md:mx-0 md:px-0">
           <Chip active={favorites} onClick={() => setFavorites(!favorites)}>
             <Star /> Favorites
@@ -165,6 +170,7 @@ function Search() {
             </Chip>
           )}
         </div>
+        )}
       </PageHeader>
 
       <div className="mx-auto max-w-2xl px-4 pt-4 md:px-8">

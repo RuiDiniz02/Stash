@@ -18,6 +18,8 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 | **Inbox timeline** | Chronological feed grouped by day, list or masonry grid, pinned strip, filters (All / Pinned / Favorites / Uncategorized / Archived), infinite scroll, skeletons, empty and error states. |
 | **Entries** | Edit title, note, description, link; add/remove attachments; pin, favorite, archive, delete (files removed from Storage too); share via the Web Share API (including files where supported) or copy. Right‑side detail panel on desktop, full‑screen sheet on mobile, deep‑linkable with `?entry=<id>`. |
 | **Link previews** | Server‑side Open Graph/oEmbed fetch (`/api/link-preview`) with SSRF protection. YouTube, Vimeo, TikTok, Spotify and Reddit use their public oEmbed endpoints. YouTube/Vimeo play inline (they allow embedding). Other platforms show a card linking to the original. |
+| **Groups** (v1.1) | Select several Inbox entries (Select button, long‑press on touch, or the checkbox on hover) and group them into one idea. Groups expand/collapse in the Inbox and can be renamed, ungrouped, or have entries added/removed. Entries are never copied; a group disappears automatically when its last entry leaves it. |
+| **Undo instead of confirmations** (v1.1) | Delete, archive, ungroup, remove from group/collection and reminder deletion apply at once with an Undo toast. Deletes are committed after the 5‑second undo window. |
 | **Collections** | Create, rename, change icon/colour, reorder (drag on desktop, or Move up/down), delete. Entries can be in several collections. One‑click “suggested collections”. Capture directly into a collection. |
 | **Tags** | Autocomplete tag input, tag browsing in sidebar and search. |
 | **Search** | Postgres full‑text + partial matching across titles, notes, descriptions, URLs, link titles, tags, collection names and file names, via the `search_entries` RPC. Filters: type, date range, favorites, archived, collection, tag. |
@@ -53,6 +55,10 @@ On **Android** (Chrome and Edge), installing the PWA adds Stash to the system sh
 
 ---
 
+## Versions
+
+The version shown in the app (sidebar, end of the Inbox on mobile, Settings, launch screen) comes from `version` in `package.json`. Bump it with each release: 1.0 = first release with launch screen; 1.1 = groups, multi‑select, undo, collection sheet, compact mobile header.
+
 ## Getting started (local)
 
 Requirements: **Node.js 22+**, a free [Supabase](https://supabase.com) project.
@@ -63,7 +69,7 @@ npm install
 
 ### 1. Create the database
 
-In your Supabase project, open **SQL Editor**, paste the contents of `supabase/migrations/20261028120000_init.sql`, and run it.
+In your Supabase project, open **SQL Editor** and run each file in `supabase/migrations/` in order (`20261028120000_init.sql`, then `20261030120000_entry_groups.sql`).
 Or use the Supabase CLI:
 
 ```bash
@@ -76,7 +82,7 @@ npx supabase db push
 
 The migration creates:
 
-- tables `profiles`, `entries`, `collections`, `entry_collections`, `tags`, `entry_tags`, `attachments`, `reminders`
+- tables `profiles`, `entries`, `collections`, `entry_collections`, `tags`, `entry_tags`, `attachments`, `reminders`, `entry_groups`
 - Row Level Security policies (owner‑only) on every table, with explicit grants to `authenticated` and none to `anon`
 - composite foreign keys so a row can never reference another user's data
 - the `search_entries` RPC (security invoker) and `delete_my_account` RPC (deletes only the caller)

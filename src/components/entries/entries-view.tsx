@@ -10,6 +10,8 @@ import { useLocalState } from "@/hooks/use-local-state";
 import { EmptyState, ErrorState, Segmented } from "@/components/ui/misc";
 import { EntryFeed, FeedSkeleton } from "./entry-feed";
 import { EntryCard } from "./entry-card";
+import { SelectionBar } from "./selection-bar";
+import { useGroups } from "@/lib/data/groups";
 import type { Entry } from "@/lib/types";
 
 export function LayoutToggle({ value, onChange }: { value: "list" | "grid"; onChange: (v: "list" | "grid") => void }) {
@@ -49,6 +51,7 @@ function useQueuedEntries(enabled: boolean): Entry[] {
         is_pinned: false,
         is_favorite: false,
         is_archived: false,
+        group_id: null,
         created_at: q.created_at,
         updated_at: q.created_at,
         attachments: [],
@@ -88,6 +91,7 @@ export function EntriesView({
   const pinned = usePinnedEntries();
   const isInbox = (filter.view ?? "inbox") === "inbox" && !filter.collectionId && !filter.tag;
   const queued = useQueuedEntries(isInbox);
+  const { data: groups } = useGroups();
 
   const entries = useMemo(() => {
     const loaded = query.data?.pages.flat() ?? [];
@@ -131,8 +135,10 @@ export function EntriesView({
           hasNextPage={query.hasNextPage}
           isFetchingNextPage={query.isFetchingNextPage}
           fetchNextPage={() => void query.fetchNextPage()}
+          groups={isInbox ? (groups ?? []) : undefined}
         />
       )}
+      <SelectionBar entries={entries} />
     </>
   );
 }
