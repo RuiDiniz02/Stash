@@ -20,6 +20,7 @@ import { useCollections } from "@/lib/data/collections";
 import { useTags } from "@/lib/data/tags";
 import { useUser } from "@/lib/user-context";
 import { cn, isMac } from "@/lib/utils";
+import { VERSION_LABEL } from "@/lib/version";
 import { useStash } from "./stash-context";
 import { CollectionIcon } from "@/components/collections/collection-icon";
 
@@ -181,6 +182,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           <Settings className="size-[18px]" />
           {!collapsed && <span className="flex-1 truncate">{user.email ?? "Settings"}</span>}
         </Link>
+        <p className={cn("pt-1.5 text-[11px] text-muted-foreground/60 tabular-nums", !collapsed && "px-2.5")}>
+          {collapsed ? VERSION_LABEL : `Stash ${VERSION_LABEL}`}
+        </p>
       </div>
     </aside>
   );

@@ -8,6 +8,7 @@ import { EntriesView, LayoutToggle, useLayoutPref } from "@/components/entries/e
 import { Chip } from "@/components/ui/misc";
 import { useLocalState } from "@/hooks/use-local-state";
 import type { EntryView } from "@/lib/data/entries";
+import { VERSION_LABEL } from "@/lib/version";
 
 const VIEWS: { value: EntryView; label: string; icon: typeof InboxIcon }[] = [
   { value: "inbox", label: "All", icon: InboxIcon },
@@ -51,6 +52,8 @@ export default function InboxPage() {
             ))}
           </div>
           <EntriesView filter={{ view }} layout={layout} showPinnedStrip={view === "inbox"} />
+          {/* Desktop shows the version in the sidebar footer. */}
+          <p className="py-6 text-center text-[11px] text-muted-foreground/60 tabular-nums md:hidden">Stash {VERSION_LABEL}</p>
         </div>
       </div>
     </>

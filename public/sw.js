@@ -1,5 +1,7 @@
 /* Stash service worker: offline shell, static caching, Web Share Target, notifications. */
-const VERSION = "stash-v1";
+const VERSION = "stash-v2";
+// On slow mobile networks, fall back to the cached page after this long instead of waiting.
+const NAVIGATION_TIMEOUT_MS = 3000;
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGES_CACHE = `${VERSION}-pages`;
 const PRECACHE = ["/offline", "/icons/192", "/icons/512", "/manifest.webmanifest"];
@@ -92,20 +94,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Page navigations: network first, fall back to the last cached copy, then the offline page.
+  // Page navigations: network first; if the network fails or is slower than the timeout,
+  // serve the last cached copy (the network response still refreshes the cache), then the offline page.
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
-        try {
-          const res = await fetch(request);
-          if (res.ok && res.type === "basic" && !res.redirected) {
-            const cache = await caches.open(PAGES_CACHE);
-            cache.put(url.pathname, res.clone());
-          }
+        const cache = await caches.open(PAGES_CACHE);
+        const network = fetch(request).then((res) => {
+          if (res.ok && res.type === "basic" && !res.redirected) cache.put(url.pathname, res.clone());
           return res;
+        });
+        event.waitUntil(network.catch(() => undefined));
+        const cached = await cache.match(url.pathname);
+        try {
+          if (!cached) return await network;
+          const timeout = new Promise((resolve) => setTimeout(() => resolve(null), NAVIGATION_TIMEOUT_MS));
+          return (await Promise.race([network, timeout])) || cached;
         } catch {
-          const cache = await caches.open(PAGES_CACHE);
-          return (await cache.match(url.pathname)) || (await caches.match("/offline")) || Response.error();
+          return cached || (await caches.match("/offline")) || Response.error();
         }
       })(),
     );

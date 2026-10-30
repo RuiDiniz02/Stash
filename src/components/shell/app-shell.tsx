@@ -1,12 +1,12 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Plus, Upload } from "lucide-react";
-import { CaptureDialog } from "@/components/capture/capture-dialog";
-import { EntryDetailSheet } from "@/components/entries/entry-detail";
-import { ReminderDialog } from "@/components/reminders/reminder-dialog";
 import { ReminderScheduler } from "@/components/reminders/reminder-scheduler";
+import { createClient } from "@/lib/supabase/client";
+import { SplashScreen } from "./splash";
 import { ConfirmHost } from "@/components/ui/confirm";
 import { useProfileAccent } from "@/components/settings/use-accent";
 // Registers the beforeinstallprompt listener early, before Settings is opened.
@@ -16,6 +16,15 @@ import { OfflineBanner, OutboxSync, RealtimeSync } from "./sync";
 import { StashContext, type CapturePrefill, type ReminderPrefill, type StashActions } from "./stash-context";
 
 const COLLAPSE_KEY = "stash-sidebar-collapsed";
+
+// Dialogs are split out of the startup bundle; each loads the first time it is needed,
+// and all of them are prefetched once the browser is idle so first opens stay instant.
+const loadCapture = () => import("@/components/capture/capture-dialog");
+const loadDetail = () => import("@/components/entries/entry-detail");
+const loadReminder = () => import("@/components/reminders/reminder-dialog");
+const CaptureDialog = dynamic(() => loadCapture().then((m) => m.CaptureDialog), { ssr: false });
+const EntryDetailSheet = dynamic(() => loadDetail().then((m) => m.EntryDetailSheet), { ssr: false });
+const ReminderDialog = dynamic(() => loadReminder().then((m) => m.ReminderDialog), { ssr: false });
 
 function isEditable(el: EventTarget | null) {
   const node = el as HTMLElement | null;
@@ -32,22 +41,11 @@ const noopSubscribe = () => () => {};
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
-  if (!mounted) return <ShellSkeleton />;
+  if (!mounted) return <SplashScreen />;
   return (
-    <Suspense fallback={<ShellSkeleton />}>
+    <Suspense fallback={<SplashScreen />}>
       <Shell>{children}</Shell>
     </Suspense>
-  );
-}
-
-function ShellSkeleton() {
-  return (
-    <div className="flex min-h-dvh" aria-busy="true" aria-label="Loading Stash">
-      <div className="hidden w-[252px] shrink-0 border-r bg-sidebar md:block" />
-      <div className="flex-1">
-        <div className="h-14 border-b border-border/60" />
-      </div>
-    </div>
   );
 }
 
@@ -63,9 +61,27 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderPrefill, setReminderPrefill] = useState<ReminderPrefill | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [captureUsed, setCaptureUsed] = useState(false);
+  const [reminderUsed, setReminderUsed] = useState(false);
   const dragDepth = useRef(0);
 
   useProfileAccent();
+
+  // A page served from the offline cache skips the server's auth check; confirm the session here.
+  useEffect(() => {
+    void createClient()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (!data.session && navigator.onLine) router.replace("/login");
+      });
+  }, [router]);
+
+  useEffect(() => {
+    const prefetch = () => void Promise.all([loadCapture(), loadDetail(), loadReminder()]).catch(() => undefined);
+    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+    if (w.requestIdleCallback) w.requestIdleCallback(prefetch);
+    else setTimeout(prefetch, 1500);
+  }, []);
 
   useEffect(() => {
     try {
@@ -101,12 +117,14 @@ function Shell({ children }: { children: React.ReactNode }) {
     () => ({
       openCapture: (prefill) => {
         setCapturePrefill(prefill ?? null);
+        setCaptureUsed(true);
         setCaptureOpen(true);
       },
       openEntry: (id) => setParam("entry", id),
       closeEntry: () => setParam("entry", null),
       openReminder: (prefill) => {
         setReminderPrefill(prefill ?? null);
+        setReminderUsed(true);
         setReminderOpen(true);
       },
     }),
@@ -222,9 +240,11 @@ function Shell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <CaptureDialog open={captureOpen} onOpenChange={setCaptureOpen} prefill={capturePrefill} onOpenEntry={actions.openEntry} />
-      <EntryDetailSheet entryId={entryId} onClose={actions.closeEntry} />
-      <ReminderDialog open={reminderOpen} onOpenChange={setReminderOpen} prefill={reminderPrefill} />
+      {captureUsed && (
+        <CaptureDialog open={captureOpen} onOpenChange={setCaptureOpen} prefill={capturePrefill} onOpenEntry={actions.openEntry} />
+      )}
+      {entryId && <EntryDetailSheet entryId={entryId} onClose={actions.closeEntry} />}
+      {reminderUsed && <ReminderDialog open={reminderOpen} onOpenChange={setReminderOpen} prefill={reminderPrefill} />}
       <ConfirmHost />
       <RealtimeSync />
       <OutboxSync />

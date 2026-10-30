@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/user-context";
 import { ACCENTS, type Accent } from "@/lib/types";
 import { cn, errorMessage, formatBytes, isIOS, isMac, isStandalone } from "@/lib/utils";
+import { VERSION_LABEL } from "@/lib/version";
 
 const ACCENT_HUES: Record<Accent, string> = {
   indigo: "oklch(0.55 0.19 268)",
@@ -48,6 +49,7 @@ export default function SettingsPage() {
         <Storage />
         <DataAndAccount />
         <Shortcuts />
+        <p className="text-center text-xs text-muted-foreground/70 tabular-nums">Stash {VERSION_LABEL}</p>
       </div>
     </>
   );
