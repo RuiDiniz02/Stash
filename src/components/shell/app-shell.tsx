@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExt
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Plus, Upload } from "lucide-react";
+import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import { ReminderScheduler } from "@/components/reminders/reminder-scheduler";
 import { createClient } from "@/lib/supabase/client";
 import { SplashScreen } from "./splash";
@@ -64,6 +65,9 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [captureUsed, setCaptureUsed] = useState(false);
   const [reminderUsed, setReminderUsed] = useState(false);
   const dragDepth = useRef(0);
+  const hasComposer = pathname === "/" || /^\/collections\/[^/]+$/.test(pathname);
+
+  useVisualViewport();
 
   useProfileAccent();
 
@@ -116,7 +120,8 @@ function Shell({ children }: { children: React.ReactNode }) {
   const actions = useMemo<StashActions>(
     () => ({
       openCapture: (prefill) => {
-        setCapturePrefill(prefill ?? null);
+        const collectionId = pathname.match(/^\/collections\/([^/]+)$/)?.[1];
+        setCapturePrefill({ ...(collectionId ? { collectionIds: [collectionId] } : {}), ...prefill });
         setCaptureUsed(true);
         setCaptureOpen(true);
       },
@@ -128,7 +133,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         setReminderOpen(true);
       },
     }),
-    [setParam],
+    [setParam, pathname],
   );
 
   // Manifest shortcut: /?capture=1
@@ -213,23 +218,23 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <StashContext.Provider value={actions}>
-      <div className="flex min-h-dvh">
+      <div className="flex min-h-dvh w-full min-w-0" data-composer-page={hasComposer || undefined} data-sidebar-collapsed={collapsed || undefined}>
         <Sidebar collapsed={collapsed} onToggle={toggleSidebar} />
-        <main id="main" className="min-w-0 flex-1 pb-28 md:pb-10">
+        <main id="main" className="min-w-0 flex-1 pb-28 md:pb-10" style={hasComposer ? { paddingBottom: "calc(var(--capture-height, 90px) + 5rem + env(safe-area-inset-bottom))" } : undefined}>
           {children}
         </main>
       </div>
 
-      <BottomNav />
+      <BottomNav hasComposer={hasComposer} />
 
-      <button
+      {!hasComposer && <button
         onClick={() => actions.openCapture()}
         aria-label="New capture"
         title="New capture (N)"
         className="fixed right-6 bottom-6 z-40 hidden size-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-float transition hover:scale-105 active:scale-95 md:grid"
       >
         <Plus className="size-6" strokeWidth={2.4} />
-      </button>
+      </button>}
 
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-[70] grid place-items-center bg-background/70 backdrop-blur-sm animate-in fade-in-0">

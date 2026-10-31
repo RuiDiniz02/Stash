@@ -1,96 +1,106 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { ArrowUp, ImagePlus, Mic } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowUp, Mic, Plus, X } from "lucide-react";
 import { useStash } from "@/components/shell/stash-context";
-import { cn } from "@/lib/utils";
+import { useUser } from "@/lib/user-context";
+import { cn, uuid } from "@/lib/utils";
 import { useCapture } from "./use-capture";
-import { canRecordAudio } from "./voice-recorder";
 
-/** Chat-style capture bar at the top of the inbox: type or paste, press Enter. */
-export function QuickComposer({ collectionId }: { collectionId?: string }) {
+/** Shared capture input; drafts are isolated by account and destination. */
+export function QuickComposer({ collectionId, groupId, docked = false }: { collectionId?: string; groupId?: string; docked?: boolean }) {
   const { openCapture, openEntry } = useStash();
+  const user = useUser();
   const save = useCapture();
   const [text, setText] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [ready, setReady] = useState(false);
+  const submitting = useRef(false);
+  const captureId = useRef("");
   const fileInput = useRef<HTMLInputElement>(null);
+  const dock = useRef<HTMLDivElement>(null);
+  const draftKey = `stash-draft-v1:${user.id}:${groupId ? `group:${groupId}` : collectionId ? `collection:${collectionId}` : "inbox"}`;
   const collectionIds = collectionId ? [collectionId] : undefined;
 
+  useEffect(() => {
+    captureId.current = uuid();
+    try {
+      const raw = localStorage.getItem(draftKey) ?? "";
+      try {
+        const draft = JSON.parse(raw);
+        if (typeof draft.text === "string" && typeof draft.id === "string") { setText(draft.text); captureId.current = draft.id; }
+        else setText(raw);
+      } catch { setText(raw); }
+    } catch { /* Storage may be unavailable. */ }
+    setReady(true);
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!docked || !dock.current) return;
+    const node = dock.current;
+    const update = () => document.documentElement.style.setProperty("--capture-height", `${node.offsetHeight}px`);
+    const observer = new ResizeObserver(update);
+    observer.observe(node); update();
+    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--capture-height"); };
+  }, [docked]);
+
+  function changeText(value: string) {
+    setText(value);
+    try {
+      if (value) localStorage.setItem(draftKey, JSON.stringify({ id: captureId.current, text: value }));
+      else localStorage.removeItem(draftKey);
+    } catch { /* Capturing still works without persistent storage. */ }
+  }
+
   async function submit() {
-    const value = text.trim();
-    if (!value) return;
-    setText("");
-    const ok = await save({ text: value, collectionIds }, { onOpen: openEntry });
-    if (!ok) setText(value);
+    if (submitting.current || (!text.trim() && !files.length)) return;
+    submitting.current = true;
+    setSaving(true);
+    try {
+      const ok = await save({ id: captureId.current, text: text.trim(), files, collectionIds, groupId }, { onOpen: openEntry });
+      if (ok) { changeText(""); setFiles([]); captureId.current = uuid(); }
+    } finally { submitting.current = false; setSaving(false); }
   }
 
   return (
-    <div className="flex items-end gap-1.5 rounded-2xl border bg-card p-1.5 shadow-soft transition-[border-color,box-shadow] focus-within:border-primary/40 focus-within:ring-4 focus-within:ring-primary/10">
-      <input
-        ref={fileInput}
-        type="file"
-        multiple
-        accept="image/*,video/*,audio/*,application/pdf,*/*"
-        hidden
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          if (files.length) openCapture({ files, text, collectionIds });
-          setText("");
-        }}
-      />
-      <button
-        type="button"
-        onClick={() => fileInput.current?.click()}
-        aria-label="Add photos, videos or files"
-        className="grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground"
-      >
-        <ImagePlus className="size-[18px]" />
-      </button>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            void submit();
-          }
-        }}
-        onPaste={(e) => {
-          const files = Array.from(e.clipboardData.files);
-          if (files.length) {
-            e.preventDefault();
-            openCapture({ files, text, collectionIds });
-            setText("");
-          }
-        }}
-        rows={1}
-        maxLength={50000}
-        placeholder="Capture anything…"
-        aria-label="Quick capture"
-        className="field-sizing-content max-h-48 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-5 outline-none placeholder:text-muted-foreground/60"
-      />
-      {!text.trim() && canRecordAudio() && (
-        <button
-          type="button"
-          onClick={() => openCapture({ voice: true, collectionIds })}
-          aria-label="Record a voice note"
-          className="grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <Mic className="size-[18px]" />
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={() => void submit()}
-        disabled={!text.trim()}
-        aria-label="Save"
-        className={cn(
-          "grid size-9 shrink-0 place-items-center rounded-xl transition-all",
-          text.trim() ? "bg-primary text-primary-foreground shadow-soft active:scale-90" : "bg-muted text-muted-foreground/50",
+    <div ref={dock} className={docked ? "capture-dock" : "min-w-0"}>
+      <form onSubmit={(e) => { e.preventDefault(); void submit(); }} className="mx-auto w-full min-w-0 max-w-2xl rounded-2xl border bg-card p-1.5 shadow-soft transition-[border-color,box-shadow] focus-within:border-primary/40 focus-within:ring-4 focus-within:ring-primary/10">
+        {!!files.length && (
+          <ul className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto p-2" aria-label="Attachments to save">
+            {files.map((file, i) => (
+              <li key={`${file.name}-${i}`} className="flex max-w-full items-center gap-1 rounded-lg bg-muted py-1 pr-1 pl-2 text-xs">
+                <span className="min-w-0 truncate">{file.name}</span>
+                <button type="button" disabled={saving} onClick={() => setFiles((prev) => prev.filter((_, index) => index !== i))} aria-label={`Remove ${file.name}`} className="grid size-8 shrink-0 place-items-center rounded-md hover:bg-accent"><X className="size-3.5" /></button>
+              </li>
+            ))}
+          </ul>
         )}
-      >
-        <ArrowUp className="size-[18px]" strokeWidth={2.4} />
-      </button>
+        <div className="flex min-w-0 items-end gap-1">
+          <input ref={fileInput} type="file" multiple hidden onChange={(e) => {
+            setFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])]); e.target.value = "";
+          }} />
+          <button type="button" disabled={saving} onClick={() => fileInput.current?.click()} aria-label="Attach photos, videos or files" className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground"><Plus className="size-5" /></button>
+          <textarea
+            value={text} disabled={saving || !ready} onChange={(e) => changeText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (e.metaKey || e.ctrlKey || window.matchMedia("(pointer: fine)").matches)) {
+                e.preventDefault(); void submit();
+              }
+            }}
+            onPaste={(e) => {
+              if (e.clipboardData.files.length) { e.preventDefault(); setFiles((prev) => [...prev, ...Array.from(e.clipboardData.files)]); }
+            }}
+            rows={1} maxLength={50000} placeholder={groupId ? "Add to this idea…" : "Save a thought, link or file…"} aria-label="Quick capture"
+            className="field-sizing-content max-h-40 min-h-11 min-w-0 flex-1 resize-none bg-transparent px-1 py-3 text-[16px] leading-5 outline-none placeholder:text-muted-foreground/60 disabled:opacity-70"
+          />
+          {!text.trim() && !files.length && (
+            <button type="button" onClick={() => openCapture({ voice: true, collectionIds, groupId })} aria-label="Record a voice note" className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent"><Mic className="size-[18px]" /></button>
+          )}
+          <button type="submit" disabled={saving || (!text.trim() && !files.length)} aria-label={saving ? "Saving" : "Save"} aria-busy={saving} className={cn("grid size-11 shrink-0 place-items-center rounded-xl transition active:scale-95 disabled:opacity-40", text.trim() || files.length ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}><ArrowUp className="size-5" strokeWidth={2.4} /></button>
+        </div>
+        {!!files.length && <p className="px-3 pb-1 text-[11px] text-muted-foreground">Files stay on this device until you save. Text drafts are saved automatically.</p>}
+      </form>
     </div>
   );
 }

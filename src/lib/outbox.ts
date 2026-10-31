@@ -21,16 +21,13 @@ function read(): Queued[] {
 }
 
 function write(items: Queued[]) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(items));
-  } catch {
-    // Storage full or blocked; nothing more we can do offline.
-  }
+  // Never report a successful offline save when storage is full or blocked.
+  localStorage.setItem(KEY, JSON.stringify(items));
   listeners.forEach((l) => l());
 }
 
 export function enqueue(item: Queued) {
-  write([...read(), item]);
+  write([...read().filter((queued) => queued.id !== item.id || queued.userId !== item.userId), item]);
 }
 
 export function getQueued(userId: string) {

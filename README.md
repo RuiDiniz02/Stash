@@ -4,6 +4,8 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 
 **Stack:** Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 · shadcn/ui‑style components on Radix · Supabase (Postgres, Auth, Storage, Realtime, RLS) · TanStack Query · installable PWA.
 
+**v1.3:** shared bottom capture composer, focused group panels, a working “Add existing” picker, contextual mobile actions, safer drafts/retries and on-demand organization UI. See [implementation and verification notes](docs/ux-refinement.md).
+
 ---
 
 ## Feature status

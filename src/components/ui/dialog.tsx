@@ -34,7 +34,7 @@ export function DialogContent({ className, children, hideClose, variant = "cente
       <Overlay className={overlayClassName} />
       <DialogPrimitive.Content
         className={cn(
-          "fixed z-50 flex flex-col bg-popover text-foreground shadow-float outline-none",
+          "fixed z-50 flex min-w-0 max-w-full flex-col bg-popover text-foreground shadow-float outline-none",
           variant === "center" &&
             "inset-x-0 bottom-0 max-h-[92dvh] rounded-t-2xl border-t pb-safe data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom sm:inset-x-auto sm:bottom-auto sm:top-[12vh] sm:left-1/2 sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:rounded-2xl sm:border sm:pb-0 sm:data-[state=open]:slide-in-from-bottom-0 sm:data-[state=open]:zoom-in-95 sm:data-[state=closed]:zoom-out-95 sm:data-[state=closed]:slide-out-to-bottom-0",
           variant === "right" &&

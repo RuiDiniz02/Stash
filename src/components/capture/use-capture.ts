@@ -26,7 +26,12 @@ export function useCapture() {
           toast.error("You're offline. Files can be uploaded once you're back online.");
           return false;
         }
-        enqueue({ ...input, id, created_at, userId: user.id });
+        try {
+          enqueue({ ...input, id, created_at, userId: user.id });
+        } catch {
+          toast.error("Couldn't save offline. Keep this draft and try again when connected.");
+          return false;
+        }
         toast("Saved offline", { description: "It will sync when you're back online." });
         return true;
       }
@@ -45,7 +50,7 @@ export function useCapture() {
           is_pinned: false,
           is_favorite: false,
           is_archived: false,
-          group_id: null,
+          group_id: input.groupId ?? null,
           created_at,
           updated_at: created_at,
           attachments: [],
@@ -53,9 +58,15 @@ export function useCapture() {
           tags: (input.tags ?? []).map((name) => ({ id: name, name })),
           reminders: [],
         };
-        qc.setQueryData<InfiniteData<Entry[]>>(entriesKey({ view: "inbox" }), (data) =>
-          data ? { ...data, pages: [[optimistic, ...(data.pages[0] ?? [])], ...data.pages.slice(1)] } : data,
-        );
+        const destinations = [entriesKey({ view: "inbox" })];
+        for (const collectionId of input.collectionIds ?? []) destinations.push(entriesKey({ collectionId }));
+        if (input.groupId) destinations.push(entriesKey({ groupId: input.groupId }));
+        await Promise.all(destinations.map((queryKey) => qc.cancelQueries({ queryKey, exact: true })));
+        for (const key of destinations) {
+          qc.setQueryData<InfiniteData<Entry[]>>(key, (data) =>
+            data ? { ...data, pages: [[optimistic, ...(data.pages[0] ?? []).filter((entry) => entry.id !== id)], ...data.pages.slice(1).map((page) => page.filter((entry) => entry.id !== id))] } : data,
+          );
+        }
         try {
           await createEntry(user.id, { ...input, id });
           toast.success("Saved", {
@@ -63,6 +74,9 @@ export function useCapture() {
           });
           return true;
         } catch (err) {
+          for (const key of destinations) qc.setQueryData<InfiniteData<Entry[]>>(key, (data) =>
+            data ? { ...data, pages: data.pages.map((page) => page.filter((entry) => entry.id !== id)) } : data,
+          );
           toast.error(errorMessage(err, "Couldn't save"));
           return false;
         } finally {

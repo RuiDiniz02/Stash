@@ -16,9 +16,15 @@ import { confirm } from "@/components/ui/confirm";
 import { useCollectionMutations, useCollections } from "@/lib/data/collections";
 import { useUser } from "@/lib/user-context";
 import { errorMessage } from "@/lib/utils";
+import { SelectionProvider, useSelection } from "@/components/entries/selection";
 
 export default function CollectionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  return <SelectionProvider><CollectionContent id={id} /></SelectionProvider>;
+}
+
+function CollectionContent({ id }: { id: string }) {
+  const selection = useSelection();
   const user = useUser();
   const router = useRouter();
   const { data: collections, isLoading } = useCollections();
@@ -47,9 +53,9 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
           </Link>
         }
         title={
-          <span className="flex items-center gap-2">
+          <span className="flex min-w-0 items-center gap-2">
             {collection && <CollectionIcon icon={collection.icon} color={collection.color} size="sm" className="size-6 rounded-md" />}
-            {collection?.name ?? " "}
+            <span className="truncate">{collection?.name ?? " "}</span>
           </span>
         }
         subtitle={collection ? `${collection.entry_count} item${collection.entry_count === 1 ? "" : "s"}` : undefined}
@@ -91,12 +97,11 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
       />
       <div className="mx-auto max-w-5xl px-4 md:px-8">
         <div className={layout === "list" ? "mx-auto max-w-2xl" : undefined}>
-          <div className="pt-3 pb-5">
-            <QuickComposer collectionId={id} />
-          </div>
+          <div className="h-4" />
           <EntriesView filter={{ collectionId: id }} layout={layout} />
         </div>
       </div>
+      {!selection?.active && <QuickComposer key={id} collectionId={id} docked />}
       <CollectionDialog open={editing} onOpenChange={setEditing} collection={collection} />
     </>
   );

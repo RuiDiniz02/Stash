@@ -14,7 +14,7 @@ import { FileThumb } from "./file-thumb";
 import { VoiceRecorder, canRecordAudio } from "./voice-recorder";
 import { useCapture } from "./use-capture";
 import type { CapturePrefill } from "@/components/shell/stash-context";
-import { cn, extractUrl, hostname, isMac } from "@/lib/utils";
+import { cn, extractUrl, hostname, isMac, uuid } from "@/lib/utils";
 
 type Section = "tags" | "collections" | "reminder" | "details";
 
@@ -39,6 +39,9 @@ export function CaptureDialog({
   const [reminder, setReminder] = useState<ReminderDraft | null>(null);
   const [sections, setSections] = useState<Set<Section>>(new Set());
   const [recording, setRecording] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const submitting = useRef(false);
+  const captureId = useRef("");
   const textRef = useRef<HTMLTextAreaElement>(null);
   const mediaInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
@@ -46,6 +49,7 @@ export function CaptureDialog({
 
   useEffect(() => {
     if (!open) return;
+    captureId.current = uuid();
     setText(prefill?.text ?? "");
     setTitle(prefill?.title ?? "");
     setDescription("");
@@ -58,7 +62,7 @@ export function CaptureDialog({
   }, [open, prefill]);
 
   const url = extractUrl(text);
-  const canSave = !recording && (text.trim().length > 0 || files.length > 0);
+  const canSave = !saving && !recording && (text.trim().length > 0 || files.length > 0);
   const mod = typeof window !== "undefined" && isMac() ? "⌘" : "Ctrl";
 
   function toggleSection(s: Section) {
@@ -78,21 +82,30 @@ export function CaptureDialog({
   }
 
   async function submit() {
-    if (!canSave) return;
+    if (!canSave || submitting.current) return;
+    submitting.current = true;
+    setSaving(true);
     const input = {
+      id: captureId.current,
       text,
       title,
       description,
       files,
       tags,
       collectionIds,
+      groupId: prefill?.groupId,
       reminder:
         reminder && sections.has("reminder")
           ? { due_at: draftToIso(reminder), all_day: reminder.allDay, repeat: reminder.repeat }
           : null,
     };
-    onOpenChange(false);
-    await save(input, { onOpen: onOpenEntry });
+    try {
+      const ok = await save(input, { onOpen: onOpenEntry });
+      if (ok) onOpenChange(false);
+    } finally {
+      submitting.current = false;
+      setSaving(false);
+    }
   }
 
   function onPaste(e: React.ClipboardEvent) {
@@ -104,7 +117,7 @@ export function CaptureDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(value) => { if (!saving) onOpenChange(value); }}>
       <DialogContent
         hideClose
         className="sm:top-[10vh] sm:max-w-xl"
@@ -128,6 +141,7 @@ export function CaptureDialog({
         <div className="flex items-center justify-between px-4 pt-3 sm:pt-4">
           <DialogTitle className="text-sm font-medium text-muted-foreground">New capture</DialogTitle>
           <button
+            disabled={saving}
             onClick={() => onOpenChange(false)}
             className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
             aria-label="Close"

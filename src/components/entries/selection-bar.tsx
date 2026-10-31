@@ -1,19 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { Archive, FolderPlus, Layers, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { CollectionSheet } from "@/components/collections/collection-sheet";
 import { useEntryCommands } from "@/lib/data/entries";
 import { useGroupCommands } from "@/lib/data/groups";
 import { useUser } from "@/lib/user-context";
 import type { Entry } from "@/lib/types";
 import { cn, errorMessage } from "@/lib/utils";
-import { GroupSheet } from "./group-sheet";
 import { useSelection } from "./selection";
 
+const CollectionSheet = dynamic(() => import("@/components/collections/collection-sheet").then((m) => m.CollectionSheet), { ssr: false });
+const GroupSheet = dynamic(() => import("./group-sheet").then((m) => m.GroupSheet), { ssr: false });
+
 /** Floating action bar for multi-select: group, add to collection, archive, delete. */
-export function SelectionBar({ entries }: { entries: Entry[] }) {
+export function SelectionBar({ entries, embedded = false }: { entries: Entry[]; embedded?: boolean }) {
   const selection = useSelection();
   const user = useUser();
   const commands = useEntryCommands();
@@ -22,7 +24,8 @@ export function SelectionBar({ entries }: { entries: Entry[] }) {
   const [collectionOpen, setCollectionOpen] = useState(false);
   if (!selection?.active) return null;
 
-  const chosen = entries.filter((e) => selection.selected.has(e.id));
+  const available = new Map([...selection.registered, ...entries.map((entry) => [entry.id, entry] as const)]);
+  const chosen = [...available.values()].filter((e) => selection.selected.has(e.id));
   const ids = chosen.map((e) => e.id);
   const none = chosen.length === 0;
   const target = selection.target;
@@ -42,7 +45,7 @@ export function SelectionBar({ entries }: { entries: Entry[] }) {
       <div
         role="toolbar"
         aria-label="Selected entries"
-        className="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-md animate-in fade-in-0 slide-in-from-bottom-4 md:bottom-6"
+        className={embedded ? "w-full min-w-0" : "fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-md animate-in fade-in-0 slide-in-from-bottom-4 md:bottom-6"}
       >
         <div className="flex items-center gap-1 rounded-2xl border bg-popover p-1.5 shadow-float">
           <button
@@ -82,15 +85,15 @@ export function SelectionBar({ entries }: { entries: Entry[] }) {
           )}
         </div>
       </div>
-      <GroupSheet open={groupOpen} onOpenChange={setGroupOpen} entries={chosen} onDone={selection.clear} />
-      <CollectionSheet
+      {groupOpen && <GroupSheet open onOpenChange={setGroupOpen} entries={chosen} onDone={selection.clear} />}
+      {collectionOpen && <CollectionSheet
         open={collectionOpen}
         onOpenChange={(open) => {
           setCollectionOpen(open);
           if (!open) selection.clear();
         }}
         entries={chosen}
-      />
+      />}
     </>
   );
 }

@@ -2,10 +2,8 @@
 
 import { useMemo } from "react";
 import { Archive, FolderOpen, Hash, Inbox, LayoutGrid, List, Pin, Star, Tag } from "lucide-react";
-import { useEntries, usePinnedEntries, parseCaptureText, deriveKind, type EntryFilter } from "@/lib/data/entries";
-import { getQueued } from "@/lib/outbox";
-import { useUser } from "@/lib/user-context";
-import { useQueuedCount } from "@/components/shell/sync";
+import { useEntries, usePinnedEntries, type EntryFilter } from "@/lib/data/entries";
+import { useQueuedEntries } from "@/hooks/use-queued-entries";
 import { useLocalState } from "@/hooks/use-local-state";
 import { EmptyState, ErrorState, Segmented } from "@/components/ui/misc";
 import { EntryFeed, FeedSkeleton } from "./entry-feed";
@@ -13,7 +11,6 @@ import { EntryCard } from "./entry-card";
 import { SelectionBar } from "./selection-bar";
 import { useGroups } from "@/lib/data/groups";
 import { InboxDnd } from "./dnd";
-import type { Entry } from "@/lib/types";
 
 export function LayoutToggle({ value, onChange }: { value: "list" | "grid"; onChange: (v: "list" | "grid") => void }) {
   return (
@@ -33,43 +30,11 @@ export function useLayoutPref(key: string) {
   return useLocalState<"list" | "grid">(`stash-layout-${key}`, "list");
 }
 
-function useQueuedEntries(enabled: boolean): Entry[] {
-  const user = useUser();
-  const count = useQueuedCount(user.id);
-  return useMemo(() => {
-    if (!enabled || !count) return [];
-    return getQueued(user.id).map((q) => {
-      const { url, body } = parseCaptureText(q.text);
-      return {
-        id: q.id,
-        user_id: user.id,
-        kind: deriveKind(url, []),
-        title: q.title || null,
-        body,
-        description: q.description || null,
-        url,
-        link_preview: null,
-        is_pinned: false,
-        is_favorite: false,
-        is_archived: false,
-        group_id: null,
-        created_at: q.created_at,
-        updated_at: q.created_at,
-        attachments: [],
-        collection_ids: q.collectionIds ?? [],
-        tags: (q.tags ?? []).map((name) => ({ id: name, name })),
-        reminders: [],
-        pending: true,
-      } satisfies Entry;
-    });
-  }, [enabled, count, user.id]);
-}
-
 const EMPTY: Record<string, { icon: typeof Inbox; title: string; description: string }> = {
   inbox: {
     icon: Inbox,
     title: "Your stash is empty",
-    description: "Type a thought, paste a link or drop a photo above. Organize later — or never.",
+    description: "Save a thought, link or photo with the input below. Organize whenever you like.",
   },
   pinned: { icon: Pin, title: "Nothing pinned", description: "Pin entries you want to keep at the top." },
   favorites: { icon: Star, title: "No favorites yet", description: "Star the things you love to find them here." },
@@ -89,9 +54,9 @@ export function EntriesView({
   emptyAction?: React.ReactNode;
 }) {
   const query = useEntries(filter);
-  const pinned = usePinnedEntries();
-  const isInbox = (filter.view ?? "inbox") === "inbox" && !filter.collectionId && !filter.tag;
-  const queued = useQueuedEntries(isInbox);
+  const pinned = usePinnedEntries(!!showPinnedStrip);
+  const isInbox = (filter.view ?? "inbox") === "inbox" && !filter.collectionId && !filter.tag && !filter.groupId;
+  const queued = useQueuedEntries(filter);
   const { data: groups } = useGroups();
 
   const entries = useMemo(() => {
@@ -106,7 +71,7 @@ export function EntriesView({
   if (query.error) return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
 
   const empty = filter.collectionId
-    ? { icon: FolderOpen, title: "Nothing here yet", description: "Capture straight into this collection above, or add entries from their ⋯ menu." }
+    ? { icon: FolderOpen, title: "Nothing here yet", description: "Use the input below to save into this collection, or add existing entries from their actions menu." }
     : filter.tag
       ? { icon: Hash, title: "No entries with this tag", description: "Tags you add to entries show up here." }
       : (EMPTY[filter.view ?? "inbox"] ?? EMPTY.inbox);
@@ -136,7 +101,8 @@ export function EntriesView({
           hasNextPage={query.hasNextPage}
           isFetchingNextPage={query.isFetchingNextPage}
           fetchNextPage={() => void query.fetchNextPage()}
-          groups={isInbox ? (groups ?? []) : undefined}
+          groups={isInbox || filter.collectionId ? (groups ?? []) : undefined}
+          collectionId={filter.collectionId}
         />
       )}
     </>

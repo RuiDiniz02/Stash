@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Archive,
   ArchiveRestore,
   Bell,
   Copy,
+  CheckSquare,
   Ellipsis,
   ExternalLink,
   FolderPlus,
@@ -26,15 +28,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/menu";
-import { CollectionSheet } from "@/components/collections/collection-sheet";
 import { useEntryCommands, useUpdateEntry } from "@/lib/data/entries";
 import { useGroupCommands } from "@/lib/data/groups";
 import { useUser } from "@/lib/user-context";
-import { GroupSheet } from "./group-sheet";
 import { getSignedUrl } from "@/lib/data/signed-urls";
 import type { Entry } from "@/lib/types";
 import { cn, errorMessage } from "@/lib/utils";
 import { useStash } from "@/components/shell/stash-context";
+import { useSelection } from "./selection";
+
+const CollectionSheet = dynamic(() => import("@/components/collections/collection-sheet").then((m) => m.CollectionSheet), { ssr: false });
+const GroupSheet = dynamic(() => import("./group-sheet").then((m) => m.GroupSheet), { ssr: false });
 
 export function entryShareText(entry: Entry) {
   return [entry.title, entry.body, entry.description].filter(Boolean).join("\n\n");
@@ -73,7 +77,7 @@ export async function shareEntry(entry: Entry) {
   toast.success("Copied to clipboard");
 }
 
-export function EntryActions({ entry, className, align = "end" }: { entry: Entry; className?: string; align?: "start" | "end" }) {
+export function EntryActions({ entry, className, align = "end", open, onOpenChange }: { entry: Entry; className?: string; align?: "start" | "end"; open?: boolean; onOpenChange?: (value: boolean) => void }) {
   const { openReminder, closeEntry } = useStash();
   const update = useUpdateEntry();
   const commands = useEntryCommands();
@@ -81,6 +85,7 @@ export function EntryActions({ entry, className, align = "end" }: { entry: Entry
   const [groupOpen, setGroupOpen] = useState(false);
   const user = useUser();
   const groupCommands = useGroupCommands(user.id);
+  const selection = useSelection();
 
   const toggle = (patch: Parameters<typeof update.mutate>[0]["patch"]) =>
     update.mutate({ id: entry.id, patch }, { onError: (e) => toast.error(errorMessage(e)) });
@@ -91,7 +96,7 @@ export function EntryActions({ entry, className, align = "end" }: { entry: Entry
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger
           onClick={(e) => e.stopPropagation()}
           className={cn(
@@ -102,7 +107,8 @@ export function EntryActions({ entry, className, align = "end" }: { entry: Entry
         >
           <Ellipsis className="size-4" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align={align} onClick={(e) => e.stopPropagation()} className="w-56">
+        <DropdownMenuContent align={align} onClick={(e) => e.stopPropagation()} className="mobile-action-menu w-56">
+          {selection && <DropdownMenuItem onSelect={() => selection.start(entry.id)}><CheckSquare /> Select</DropdownMenuItem>}
           <DropdownMenuItem onSelect={() => toggle({ is_pinned: !entry.is_pinned })}>
             {entry.is_pinned ? <PinOff /> : <Pin />} {entry.is_pinned ? "Unpin" : "Pin to top"}
           </DropdownMenuItem>
@@ -157,8 +163,8 @@ export function EntryActions({ entry, className, align = "end" }: { entry: Entry
       </DropdownMenu>
       {/* React events bubble through portals; keep sheet clicks from reaching the card. */}
       <div className="contents" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-        <CollectionSheet open={collectionsOpen} onOpenChange={setCollectionsOpen} entries={[entry]} />
-        <GroupSheet open={groupOpen} onOpenChange={setGroupOpen} entries={[entry]} />
+        {collectionsOpen && <CollectionSheet open onOpenChange={setCollectionsOpen} entries={[entry]} />}
+        {groupOpen && <GroupSheet open onOpenChange={setGroupOpen} entries={[entry]} />}
       </div>
     </>
   );

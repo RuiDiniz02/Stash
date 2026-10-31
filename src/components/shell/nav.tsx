@@ -44,6 +44,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const { data: collections } = useCollections();
   const { data: tags } = useTags();
   const mod = typeof window !== "undefined" && isMac() ? "⌘" : "Ctrl";
+  const hasComposer = pathname === "/" || /^\/collections\/[^/]+$/.test(pathname);
 
   return (
     <aside
@@ -69,7 +70,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         )}
       </div>
 
-      <div className="px-3 pb-2">
+      {!hasComposer && <div className="px-3 pb-2">
         <button
           onClick={() => openCapture()}
           className={cn(
@@ -87,7 +88,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
             </>
           )}
         </button>
-      </div>
+      </div>}
 
       <nav className="flex flex-col gap-0.5 px-3 py-1">
         {NAV.map(({ href, label, icon: Icon }) => {
@@ -201,17 +202,17 @@ const MOBILE_NAV = [
   { href: "/media", label: "Media", icon: Images },
 ] as const;
 
-export function BottomNav() {
+export function BottomNav({ hasComposer = false }: { hasComposer?: boolean }) {
   const pathname = usePathname();
   const { openCapture } = useStash();
 
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/85 pb-safe backdrop-blur-xl backdrop-saturate-150 md:hidden"
+      className="bottom-nav fixed inset-x-0 bottom-0 z-40 border-t bg-background/85 pb-safe backdrop-blur-xl backdrop-saturate-150 md:hidden"
     >
-      <div className="mx-auto grid h-16 max-w-md grid-cols-5 items-center px-2">
-        {MOBILE_NAV.map((item) =>
+      <div className={cn("mx-auto grid h-16 max-w-md items-center px-2", hasComposer ? "grid-cols-4" : "grid-cols-5")}>
+        {MOBILE_NAV.filter((item) => !hasComposer || item !== null).map((item) =>
           item === null ? (
             <div key="capture" className="flex justify-center">
               <button

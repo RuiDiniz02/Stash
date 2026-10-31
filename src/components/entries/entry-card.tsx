@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useState } from "react";
+import dynamic from "next/dynamic";
 import { format, isPast } from "date-fns";
 import { Bell, Check, CloudOff, Folder, Hash, Layers, Pin, Repeat, Star } from "lucide-react";
 import { useCollections } from "@/lib/data/collections";
@@ -8,12 +9,14 @@ import { useGroups } from "@/lib/data/groups";
 import type { Entry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useStash } from "@/components/shell/stash-context";
-import { Lightbox } from "@/components/media/lightbox";
 import { AttachmentAudio, AttachmentFile, MediaGrid } from "./media";
 import { LinkCard } from "./link-card";
 import { EntryActions } from "./entry-actions";
 import { useSelection } from "./selection";
 import { useEntryDnd, useInboxDnd } from "./dnd";
+import { useContextPress } from "@/hooks/use-context-press";
+
+const Lightbox = dynamic(() => import("@/components/media/lightbox").then((m) => m.Lightbox), { ssr: false });
 
 function nextReminder(entry: Entry) {
   return entry.reminders.find((r) => !r.completed_at) ?? null;
@@ -39,6 +42,8 @@ export const EntryCard = memo(function EntryCard({
   const dnd = useInboxDnd();
   const drag = useEntryDnd(entry, noDrag);
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const press = useContextPress(() => setActionsOpen(true), !entry.pending && !selection?.active);
 
   const visual = entry.attachments.filter((a) => a.kind === "image" || a.kind === "video");
   const audio = entry.attachments.filter((a) => a.kind === "audio");
@@ -52,7 +57,7 @@ export const EntryCard = memo(function EntryCard({
   const selected = !!selection?.isSelected(entry.id);
 
   const activate = () => {
-    if (entry.pending || dnd?.justDragged()) return;
+    if (entry.pending || dnd?.justDragged() || press.suppressClick()) return;
     if (selecting) selection!.toggle(entry.id);
     else openEntry(entry.id);
   };
@@ -61,6 +66,7 @@ export const EntryCard = memo(function EntryCard({
     <article
       ref={drag.setNodeRef}
       {...drag.dragProps}
+      {...press.handlers}
       role="button"
       tabIndex={0}
       aria-label={entry.title ?? entry.body?.slice(0, 60) ?? entry.url ?? "Entry"}
@@ -74,9 +80,9 @@ export const EntryCard = memo(function EntryCard({
           activate();
         }
       }}
-      onContextMenu={(e) => drag.enabled && e.preventDefault()}
+      onContextMenu={(e) => { if (!entry.pending) { e.preventDefault(); e.stopPropagation(); setActionsOpen(true); } }}
       className={cn(
-        "group relative flex flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left shadow-soft transition-[box-shadow,border-color,transform,opacity] duration-200 outline-none select-none [-webkit-touch-callout:none] hover:border-border hover:shadow-float focus-visible:ring-3 focus-visible:ring-ring/40 animate-fade-up sm:select-auto",
+        "entry-content group relative flex flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left shadow-soft transition-[box-shadow,border-color,transform,opacity] duration-200 outline-none select-none [-webkit-touch-callout:none] hover:border-border hover:shadow-float focus-visible:ring-3 focus-visible:ring-ring/40 animate-fade-up sm:select-auto",
         drag.enabled && "touch-manipulation",
         isGrid && "mb-3 break-inside-avoid",
         entry.pending && "opacity-70",
@@ -187,11 +193,11 @@ export const EntryCard = memo(function EntryCard({
 
       {!entry.pending && !selecting && (
         <div className="absolute top-2 right-2 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:has-[[data-state=open]]:opacity-100">
-          <EntryActions entry={entry} />
+          <EntryActions entry={entry} open={actionsOpen} onOpenChange={setActionsOpen} />
         </div>
       )}
 
-      {visual.length > 0 && (
+      {visual.length > 0 && lightbox !== null && (
         // React events bubble through portals; keep lightbox clicks from opening the entry.
         <div className="contents" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
           <Lightbox

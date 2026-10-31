@@ -5,7 +5,6 @@ import {
   DndContext,
   DragOverlay,
   MouseSensor,
-  TouchSensor,
   pointerWithin,
   useDraggable,
   useDroppable,
@@ -55,7 +54,6 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 8 } }),
   );
 
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries]);

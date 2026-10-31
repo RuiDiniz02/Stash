@@ -42,6 +42,7 @@ export interface EntryFilter {
   view?: EntryView;
   collectionId?: string;
   tag?: string;
+  groupId?: string;
 }
 
 async function fetchEntryPage(filter: EntryFilter, page: number) {
@@ -66,6 +67,7 @@ async function fetchEntryPage(filter: EntryFilter, page: number) {
   }
 
   let query = supabase.from("entries").select(ENTRY_SELECT);
+  if (filter.groupId) query = query.eq("group_id", filter.groupId);
   switch (filter.view ?? "inbox") {
     case "archived":
       query = query.eq("is_archived", true);
@@ -92,21 +94,33 @@ async function fetchEntryPage(filter: EntryFilter, page: number) {
 }
 
 export function entriesKey(filter: EntryFilter) {
-  return ["entries", filter.view ?? "inbox", filter.collectionId ?? null, filter.tag ?? null] as const;
+  return ["entries", filter.view ?? "inbox", filter.collectionId ?? null, filter.tag ?? null, filter.groupId ?? null] as const;
 }
 
-export function useEntries(filter: EntryFilter) {
+export function useEntries(filter: EntryFilter, enabled = true) {
   return useInfiniteQuery({
     queryKey: entriesKey(filter),
+    enabled,
     queryFn: ({ pageParam }) => fetchEntryPage(filter, pageParam),
     initialPageParam: 0,
     getNextPageParam: (last, all) => (last.length === PAGE_SIZE ? all.length : undefined),
   });
 }
 
-export function usePinnedEntries() {
+/** Bulk group operations must include members beyond the Inbox's current page. */
+export async function fetchGroupEntries(groupId: string) {
+  const entries: Entry[] = [];
+  for (let page = 0; ; page++) {
+    const batch = await fetchEntryPage({ groupId }, page);
+    entries.push(...batch);
+    if (batch.length < PAGE_SIZE) return entries;
+  }
+}
+
+export function usePinnedEntries(enabled = true) {
   return useQuery({
     queryKey: ["entries", "pinned-strip"],
+    enabled,
     queryFn: async () => {
       const { data, error } = await createClient()
         .from("entries")
@@ -151,6 +165,7 @@ export interface CaptureInput {
   files?: File[];
   tags?: string[];
   collectionIds?: string[];
+  groupId?: string;
   reminder?: { due_at: string; all_day: boolean; repeat: RepeatInterval; title?: string } | null;
   created_at?: string;
 }
@@ -240,17 +255,25 @@ export async function createEntry(userId: string, input: CaptureInput) {
   const files = input.files ?? [];
   const kinds = files.map((f) => attachmentKind(f.type, f.name));
 
-  const { error } = await supabase.from("entries").insert({
+  const row = {
     id: entryId,
     user_id: userId,
+    group_id: input.groupId ?? null,
     kind: deriveKind(url, kinds),
     title: input.title?.trim() || null,
     body,
     description: input.description?.trim() || null,
     url,
     ...(input.created_at ? { created_at: input.created_at } : {}),
-  });
+  };
+  // The composer retains its ID after a network error. Retrying a committed request
+  // updates the same entry rather than creating a second copy.
+  const { data: inserted, error } = await supabase.from("entries").upsert(row, { onConflict: "id", ignoreDuplicates: true }).select("id");
   if (error) throw error;
+  if (!inserted?.length) {
+    const { error: retryError } = await supabase.from("entries").update(row).eq("id", entryId).select("id").single();
+    if (retryError) throw retryError;
+  }
 
   const tasks: Promise<unknown>[] = [];
   let failures: string[] = [];
@@ -266,7 +289,7 @@ export async function createEntry(userId: string, input: CaptureInput) {
       Promise.resolve(
         supabase
           .from("entry_collections")
-          .insert(input.collectionIds.map((cid) => ({ entry_id: entryId, collection_id: cid, user_id: userId }))),
+          .upsert(input.collectionIds.map((cid) => ({ entry_id: entryId, collection_id: cid, user_id: userId })), { onConflict: "entry_id,collection_id", ignoreDuplicates: true }),
       ).then(({ error }) => {
         if (error) throw error;
       }),
@@ -276,14 +299,15 @@ export async function createEntry(userId: string, input: CaptureInput) {
     const title = input.reminder.title?.trim() || input.title?.trim() || summarize(body ?? url ?? "Reminder");
     tasks.push(
       Promise.resolve(
-        supabase.from("reminders").insert({
+        supabase.from("reminders").upsert({
+          id: entryId,
           user_id: userId,
           entry_id: entryId,
           title,
           due_at: input.reminder.due_at,
           all_day: input.reminder.all_day,
           repeat: input.reminder.repeat,
-        }),
+        }, { onConflict: "id", ignoreDuplicates: true }),
       ).then(({ error }) => {
         if (error) throw error;
       }),

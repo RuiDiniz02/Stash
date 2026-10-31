@@ -67,7 +67,7 @@ export function GroupSheet({
           </DialogTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">Entries stay where they are — nothing is copied.</p>
           <div className="mt-3 flex gap-2">
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder="Group name" aria-label="Group name" autoFocus />
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="Group name" aria-label="Group name" autoFocus />
             <Button type="submit" disabled={!title.trim() || busy}>
               <Plus /> Create
             </Button>

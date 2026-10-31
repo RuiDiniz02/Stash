@@ -8,6 +8,7 @@ export interface CapturePrefill {
   title?: string;
   files?: File[];
   collectionIds?: string[];
+  groupId?: string;
   tags?: string[];
   /** Open the voice recorder straight away. */
   voice?: boolean;

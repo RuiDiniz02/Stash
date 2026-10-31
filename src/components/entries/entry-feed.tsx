@@ -61,6 +61,7 @@ export function EntryFeed({
   fetchNextPage,
   grouped = true,
   groups,
+  collectionId,
 }: {
   entries: Entry[];
   layout: "list" | "grid";
@@ -71,6 +72,7 @@ export function EntryFeed({
   grouped?: boolean;
   /** When given, entries in a group are shown together in one group card. */
   groups?: EntryGroup[];
+  collectionId?: string;
 }) {
   const sentinel = useRef<HTMLDivElement>(null);
   const days = useMemo(() => {
@@ -93,7 +95,7 @@ export function EntryFeed({
 
   const render = (item: FeedItem) =>
     item.type === "group" ? (
-      <GroupCard key={item.key} group={item.group} entries={item.entries} layout={layout} />
+      <GroupCard key={item.key} group={item.group} entries={item.entries} layout={layout} contextCollectionId={collectionId} />
     ) : (
       <EntryCard key={item.key} entry={item.entry} layout={layout} />
     );

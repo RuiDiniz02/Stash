@@ -55,20 +55,22 @@ export function CollectionSheet({
   const label = entries.length === 1 ? "entry" : `${entries.length} entries`;
 
   async function toggle(collectionId: string, name: string) {
+    if (busy) return;
     const inAll = (members.get(collectionId) ?? 0) === ids.length;
+    const affected = entries.filter((entry) => inAll || !entry.collection_ids.includes(collectionId)).map((entry) => entry.id);
     setBusy(collectionId);
     setMembers((m) => new Map(m).set(collectionId, inAll ? 0 : ids.length));
     try {
       if (inAll) {
-        await removeEntriesFromCollection(ids, collectionId);
+        await removeEntriesFromCollection(affected, collectionId);
         toastWithUndo(`Removed from ${name}`, async () => {
-          await addEntriesToCollection(user.id, ids, collectionId);
+          await addEntriesToCollection(user.id, affected, collectionId);
           await invalidateData(qc);
         });
       } else {
-        await addEntriesToCollection(user.id, ids, collectionId);
+        await addEntriesToCollection(user.id, affected, collectionId);
         toastWithUndo(`Added to ${name}`, async () => {
-          await removeEntriesFromCollection(ids, collectionId);
+          await removeEntriesFromCollection(affected, collectionId);
           await invalidateData(qc);
         });
       }
@@ -82,6 +84,7 @@ export function CollectionSheet({
   }
 
   async function createAndAdd() {
+    if (busy) return;
     const name = query.trim();
     if (!name) {
       inputRef.current?.focus();
@@ -155,7 +158,7 @@ export function CollectionSheet({
             <button
               type="button"
               onClick={() => void createAndAdd()}
-              disabled={busy === "new"}
+              disabled={!!busy}
               className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-primary hover:bg-accent"
             >
               <span className="grid size-8 place-items-center rounded-lg bg-primary-soft">
@@ -177,7 +180,7 @@ export function CollectionSheet({
                     role="checkbox"
                     aria-checked={all ? true : some ? "mixed" : false}
                     onClick={() => void toggle(c.id, c.name)}
-                    disabled={busy === c.id}
+                    disabled={!!busy}
                     className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-accent"
                   >
                     <CollectionIcon icon={c.icon} color={c.color} />

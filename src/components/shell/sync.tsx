@@ -93,7 +93,7 @@ export function OutboxSync() {
         toast.success(sent === 1 ? "Offline capture synced" : `${sent} offline captures synced`);
         void invalidateData(qc);
       }
-    });
+    }).catch(() => toast.error("Couldn't sync offline captures. They are still saved on this device."));
   }, [online, user.id, qc]);
 
   return null;

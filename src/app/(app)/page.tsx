@@ -60,9 +60,6 @@ function Inbox() {
       />
       <div className="mx-auto max-w-5xl px-4 md:px-8">
         <div className={layout === "list" ? "mx-auto max-w-2xl" : undefined}>
-          <div className="pt-3">
-            <QuickComposer />
-          </div>
           <div className="-mx-4 mt-3 mb-4 flex gap-1.5 overflow-x-auto px-4 scrollbar-none md:mx-0 md:px-0" role="tablist" aria-label="Filter">
             {VIEWS.map((v) => (
               <Chip
@@ -83,6 +80,7 @@ function Inbox() {
           <p className="py-6 text-center text-[11px] text-muted-foreground/60 tabular-nums md:hidden">Stash {VERSION_LABEL}</p>
         </div>
       </div>
+      {!selection.active && <QuickComposer docked />}
     </>
   );
 }
