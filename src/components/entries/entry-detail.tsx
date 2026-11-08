@@ -43,6 +43,8 @@ export function EntryDetailSheet({ entryId, onClose }: { entryId: string | null;
 
 function EntryDetail({ entryId, onClose }: { entryId: string; onClose: () => void }) {
   const { data: entry, isLoading, error, refetch } = useEntry(entryId);
+  const user = useUser();
+  const editable = entry?.user_id === user.id;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -53,7 +55,7 @@ function EntryDetail({ entryId, onClose }: { entryId: string; onClose: () => voi
         <DialogTitle className="flex-1 truncate px-1 text-sm font-medium text-muted-foreground">
           {entry ? format(new Date(entry.created_at), "EEEE, d MMM yyyy · HH:mm") : "Entry"}
         </DialogTitle>
-        {entry && <HeaderToggles entry={entry} />}
+        {entry && editable && <HeaderToggles entry={entry} />}
         {entry && <EntryActions entry={entry} />}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -66,7 +68,7 @@ function EntryDetail({ entryId, onClose }: { entryId: string; onClose: () => voi
         )}
         {error && <ErrorState error={error} onRetry={() => refetch()} />}
         {!isLoading && !error && !entry && <p className="p-8 text-center text-sm text-muted-foreground">This entry no longer exists.</p>}
-        {entry && <EntryEditor key={entry.id} entry={entry} />}
+        {entry && <EntryEditor key={entry.id} entry={entry} readOnly={!editable} />}
       </div>
     </div>
   );
@@ -96,7 +98,7 @@ function HeaderToggles({ entry }: { entry: Entry }) {
   );
 }
 
-function EntryEditor({ entry }: { entry: Entry }) {
+function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boolean }) {
   const user = useUser();
   const qc = useQueryClient();
   const update = useUpdateEntry();
@@ -123,6 +125,56 @@ function EntryEditor({ entry }: { entry: Entry }) {
   const files = entry.attachments.filter((a) => a.kind === "file");
   const provider = entry.link_preview?.provider ?? detectProvider(entry.url);
   const embedId = entry.link_preview?.embed_id;
+
+  if (readOnly) {
+    return (
+      <div className="space-y-5 p-5 pb-safe">
+        <div className="space-y-2">
+          {entry.title && <h2 className="text-xl font-semibold tracking-tight">{entry.title}</h2>}
+          {entry.body && <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words">{entry.body}</p>}
+        </div>
+        {embedId && (provider === "youtube" || provider === "vimeo") && (
+          <div className="aspect-video overflow-hidden rounded-xl bg-black">
+            <iframe
+              src={provider === "youtube" ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(embedId)}` : `https://player.vimeo.com/video/${encodeURIComponent(embedId)}?dnt=1`}
+              title={entry.link_preview?.title ?? "Video"}
+              allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+              allowFullScreen
+              loading="lazy"
+              className="size-full"
+            />
+          </div>
+        )}
+        {entry.url && <LinkCard url={entry.url} preview={entry.link_preview} />}
+        {visual.length > 0 && (
+          <div className="grid grid-cols-2 gap-2">
+            {visual.map((att, index) => (
+              <div key={att.id} className={cn("overflow-hidden rounded-xl", visual.length === 1 && "col-span-2")}>
+                {att.kind === "video" ? (
+                  <AttachmentVideoThumb att={att} className="aspect-video w-full cursor-zoom-in" onClick={() => setLightbox(index)} />
+                ) : (
+                  <AttachmentImage att={att} className={cn("w-full cursor-zoom-in", visual.length === 1 ? "max-h-[60vh] min-h-48" : "aspect-square")} onClick={() => setLightbox(index)} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {audio.map((attachment) => <AttachmentAudio key={attachment.id} att={attachment} />)}
+        {files.map((attachment) => <AttachmentFile key={attachment.id} att={attachment} />)}
+        {entry.description && <p className="rounded-xl border bg-muted/30 p-3 text-sm text-muted-foreground">{entry.description}</p>}
+        {entry.tags.length > 0 && <p className="text-xs text-muted-foreground">{entry.tags.map((tag) => `#${tag.name}`).join(" · ")}</p>}
+        <p className="border-t pt-4 text-xs text-muted-foreground">
+          Shared entry · Saved {format(new Date(entry.created_at), "d MMM yyyy, HH:mm")}
+        </p>
+        <Lightbox
+          items={visual.map((attachment) => ({ ...attachment, sourceUrl: entry.url, caption: entry.title }))}
+          index={lightbox}
+          onIndexChange={setLightbox}
+          onClose={() => setLightbox(null)}
+        />
+      </div>
+    );
+  }
 
   function save(field: "title" | "body" | "description", value: string) {
     const clean = value.trim() || null;

@@ -1,5 +1,5 @@
 /* Stash service worker: offline shell, static caching, Web Share Target, notifications. */
-const VERSION = "stash-v3";
+const VERSION = "stash-v4";
 // On slow mobile networks, fall back to the cached page after this long instead of waiting.
 const NAVIGATION_TIMEOUT_MS = 3000;
 const STATIC_CACHE = `${VERSION}-static`;

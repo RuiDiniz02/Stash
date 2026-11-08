@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle, SheetHandle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/misc";
-import { addEntriesToCollection, removeEntriesFromCollection, useCollectionMutations, useCollections } from "@/lib/data/collections";
+import { addEntriesToCollection, canEditCollection, removeEntriesFromCollection, useCollectionMutations, useCollections } from "@/lib/data/collections";
 import { invalidateData } from "@/lib/data/keys";
 import { toastWithUndo } from "@/lib/undo";
 import { useUser } from "@/lib/user-context";
@@ -50,8 +50,9 @@ export function CollectionSheet({
   }, [open]);
 
   const q = query.trim().toLowerCase();
-  const filtered = (collections ?? []).filter((c) => !q || c.name.toLowerCase().includes(q));
-  const exact = (collections ?? []).some((c) => c.name.toLowerCase() === q);
+  const editableCollections = (collections ?? []).filter(canEditCollection);
+  const filtered = editableCollections.filter((c) => !q || c.name.toLowerCase().includes(q));
+  const exact = editableCollections.some((c) => c.name.toLowerCase() === q);
   const label = entries.length === 1 ? "entry" : `${entries.length} entries`;
 
   async function toggle(collectionId: string, name: string) {
@@ -141,7 +142,7 @@ export function CollectionSheet({
             </div>
           )}
 
-          {!isLoading && !collections?.length && !q && (
+          {!isLoading && !editableCollections.length && !q && (
             <div className="flex flex-col items-center px-4 py-6 text-center">
               <span className="mb-3 grid size-10 place-items-center rounded-xl bg-primary-soft text-primary">
                 <FolderPlus className="size-5" />
@@ -200,7 +201,7 @@ export function CollectionSheet({
             })}
           </ul>
 
-          {!isLoading && !!collections?.length && !q && (
+          {!isLoading && editableCollections.length > 0 && !q && (
             <button
               type="button"
               onClick={() => inputRef.current?.focus()}

@@ -6,6 +6,8 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 
 **v1.3:** shared bottom capture composer, focused group panels, a working “Add existing” picker, contextual mobile actions, safer drafts/retries and on-demand organization UI. See [implementation and verification notes](docs/ux-refinement.md).
 
+**v1.4 (in development):** private-by-default shared collections with email invitations, owner/editor/viewer permissions, member management and RLS-protected cross-account entries.
+
 ---
 
 ## Feature status
@@ -23,7 +25,7 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 | **Groups** (v1.1) | Select several Inbox entries (Select button, long‑press on touch, or the checkbox on hover) and group them into one idea. Groups expand/collapse in the Inbox and can be renamed, ungrouped, or have entries added/removed. Entries are never copied; a group disappears automatically when its last entry leaves it. |
 | **Drag to group** (v1.2) | Like folders on an iPhone: hold an entry (≈0.3 s on touch, or drag with the mouse) and drop it on another entry to create a group, or on a group to add it. The new group asks for a name right away; confirming the name saves it as a collection with the same name (or links an existing one). The database keeps that collection in step with the group; ungrouping keeps the collection. |
 | **Undo instead of confirmations** (v1.1) | Delete, archive, ungroup, remove from group/collection and reminder deletion apply at once with an Undo toast. Deletes are committed after the 5‑second undo window. |
-| **Collections** | Create, rename, change icon/colour, reorder (drag on desktop, or Move up/down), delete. Entries can be in several collections. One‑click “suggested collections”. Capture directly into a collection. |
+| **Collections** | Create, rename, change icon/colour, reorder (drag on desktop, or Move up/down), delete. Entries can be in several collections. One‑click “suggested collections”. Capture directly into a collection. Collections remain private unless their owner invites members; editors can add and organize entries, viewers have read-only access, and every entry keeps its original owner. |
 | **Tags** | Autocomplete tag input, tag browsing in sidebar and search. |
 | **Search** | Postgres full‑text + partial matching across titles, notes, descriptions, URLs, link titles, tags, collection names and file names, via the `search_entries` RPC. Filters: type, date range, favorites, archived, collection, tag. |
 | **Media library** | Masonry gallery of every photo and video, sort and filter, full‑screen viewer with swipe/arrow keys, video playback, download, “open entry” and “open source link”. |
@@ -60,7 +62,7 @@ On **Android** (Chrome and Edge), installing the PWA adds Stash to the system sh
 
 ## Versions
 
-The version shown in the app (sidebar, end of the Inbox on mobile, Settings, launch screen) comes from `version` in `package.json`. Bump it with each release: 1.0 = first release with launch screen; 1.1 = groups, multi‑select, undo, collection sheet, compact mobile header; 1.2 = drag one entry onto another to group, named groups become collections, logo in the mobile header goes to the Inbox.
+The version shown in the app (sidebar, end of the Inbox on mobile, Settings, launch screen) comes from `version` in `package.json`. Bump it with each release: 1.0 = first release with launch screen; 1.1 = groups, multi‑select, undo, collection sheet, compact mobile header; 1.2 = drag one entry onto another to group, named groups become collections; 1.3 = mobile capture and group refinement; 1.4 = shared collections phase 1.
 
 ## Getting started (local)
 
@@ -85,7 +87,7 @@ npx supabase db push
 
 The migration creates:
 
-- tables `profiles`, `entries`, `collections`, `entry_collections`, `tags`, `entry_tags`, `attachments`, `reminders`, `entry_groups`
+- tables `profiles`, `entries`, `collections`, `entry_collections`, `collection_members`, `collection_invites`, `tags`, `entry_tags`, `attachments`, `reminders`, `entry_groups`
 - Row Level Security policies (owner‑only) on every table, with explicit grants to `authenticated` and none to `anon`
 - composite foreign keys so a row can never reference another user's data
 - the `search_entries` RPC (security invoker) and `delete_my_account` RPC (deletes only the caller)
@@ -176,7 +178,7 @@ public/sw.js           service worker
 supabase/migrations/   schema, RLS, storage, RPCs
 ```
 
-**Data flow.** Pages are client components that read and write Supabase directly with the user's JWT. RLS enforces ownership, and composite FKs enforce relationships between a user's own rows. Server code is used only where it adds security or capability: session refresh, auth callbacks, and link previews, which can't run in the browser because of CORS and SSRF.
+**Data flow.** Pages are client components that read and write Supabase directly with the user's JWT. RLS enforces ownership and shared-collection membership. Personal entries remain owned by their creator; `entry_collections` can link those entries into a collection accessible to several accounts without copying them. Server code is used only where it adds security or capability: session refresh, auth callbacks, and link previews, which can't run in the browser because of CORS and SSRF.
 
 **Files** go in `stash/<user_id>/<entry_id>/<random>-<name>`. Storage policies only allow a user into their own top‑level folder, and a DB check constraint ties each `attachments.storage_path` to its owner. Files are shown with short‑lived signed URLs, batched into a single request per render.
 

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowUp, Ellipsis, FolderPlus, GripVertical, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Ellipsis, FolderPlus, GripVertical, Pencil, Plus, Share2, Sparkles, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { confirm } from "@/components/ui/confirm";
 import { CollectionDialog } from "@/components/collections/collection-dialog";
 import { CollectionIcon } from "@/components/collections/collection-icon";
+import { ShareCollectionDialog } from "@/components/collections/share-collection-dialog";
 import { SUGGESTED_COLLECTIONS, useCollectionMutations, useCollections } from "@/lib/data/collections";
 import { useUser } from "@/lib/user-context";
 import type { Collection } from "@/lib/types";
@@ -32,6 +33,7 @@ function Collections() {
   const { data: collections, isLoading, error, refetch } = useCollections();
   const { create, remove, reorder } = useCollectionMutations(user.id);
   const [dialog, setDialog] = useState<{ open: boolean; collection: Collection | null }>({ open: false, collection: null });
+  const [sharing, setSharing] = useState<Collection | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -124,7 +126,7 @@ function Collections() {
             {collections.map((c, i) => (
               <li
                 key={c.id}
-                draggable
+                draggable={c.access_role === "owner"}
                 onDragStart={(e) => {
                   setDragId(c.id);
                   e.dataTransfer.effectAllowed = "move";
@@ -151,7 +153,12 @@ function Collections() {
                     </p>
                   </div>
                 </Link>
-                <GripVertical aria-hidden className="absolute top-4 right-11 hidden size-4 cursor-grab text-muted-foreground/50 opacity-0 transition group-hover:opacity-100 md:block" />
+                {c.access_role === "owner" && <GripVertical aria-hidden className="absolute top-4 right-11 hidden size-4 cursor-grab text-muted-foreground/50 opacity-0 transition group-hover:opacity-100 md:block" />}
+                {(c.member_count ?? 0) + (c.pending_invite_count ?? 0) > 0 && (
+                  <span className="pointer-events-none absolute top-3 left-3 inline-flex h-7 items-center gap-1 rounded-full border bg-card/95 px-2 text-[11px] font-medium text-muted-foreground shadow-soft">
+                    <Users className="size-3" /> {c.access_role === "owner" ? "Shared" : "Shared with you"}
+                  </span>
+                )}
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     className="absolute top-3 right-3 grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent data-[state=open]:bg-accent"
@@ -160,19 +167,26 @@ function Collections() {
                     <Ellipsis className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={() => setDialog({ open: true, collection: c })}>
-                      <Pencil /> Rename & style
+                    <DropdownMenuItem onSelect={() => setSharing(c)}>
+                      <Share2 /> {c.access_role === "owner" ? "Share & members" : "View members"}
                     </DropdownMenuItem>
-                    <DropdownMenuItem disabled={i === 0} onSelect={() => move(c.id, -1)}>
-                      <ArrowUp /> Move up
-                    </DropdownMenuItem>
-                    <DropdownMenuItem disabled={i === collections.length - 1} onSelect={() => move(c.id, 1)}>
-                      <ArrowDown /> Move down
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem destructive onSelect={() => void onDelete(c)}>
-                      <Trash2 /> Delete
-                    </DropdownMenuItem>
+                    {c.access_role === "owner" && (
+                      <>
+                        <DropdownMenuItem onSelect={() => setDialog({ open: true, collection: c })}>
+                          <Pencil /> Rename & style
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={i === 0} onSelect={() => move(c.id, -1)}>
+                          <ArrowUp /> Move up
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={i === collections.length - 1} onSelect={() => move(c.id, 1)}>
+                          <ArrowDown /> Move down
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem destructive onSelect={() => void onDelete(c)}>
+                          <Trash2 /> Delete
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </li>
@@ -191,6 +205,7 @@ function Collections() {
         onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
         onCreated={(c) => router.push(`/collections/${c.id}`)}
       />
+      <ShareCollectionDialog collection={sharing} open={!!sharing} onOpenChange={(open) => !open && setSharing(null)} />
     </>
   );
 }

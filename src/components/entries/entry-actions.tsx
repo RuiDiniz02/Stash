@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import {
   Archive,
@@ -36,6 +37,8 @@ import type { Entry } from "@/lib/types";
 import { cn, errorMessage } from "@/lib/utils";
 import { useStash } from "@/components/shell/stash-context";
 import { useSelection } from "./selection";
+import { canEditCollection, removeEntriesFromCollection, useCollections } from "@/lib/data/collections";
+import { invalidateData } from "@/lib/data/keys";
 
 const CollectionSheet = dynamic(() => import("@/components/collections/collection-sheet").then((m) => m.CollectionSheet), { ssr: false });
 const GroupSheet = dynamic(() => import("./group-sheet").then((m) => m.GroupSheet), { ssr: false });
@@ -77,7 +80,7 @@ export async function shareEntry(entry: Entry) {
   toast.success("Copied to clipboard");
 }
 
-export function EntryActions({ entry, className, align = "end", open, onOpenChange }: { entry: Entry; className?: string; align?: "start" | "end"; open?: boolean; onOpenChange?: (value: boolean) => void }) {
+export function EntryActions({ entry, contextCollectionId, className, align = "end", open, onOpenChange }: { entry: Entry; contextCollectionId?: string; className?: string; align?: "start" | "end"; open?: boolean; onOpenChange?: (value: boolean) => void }) {
   const { openReminder, closeEntry } = useStash();
   const update = useUpdateEntry();
   const commands = useEntryCommands();
@@ -86,6 +89,11 @@ export function EntryActions({ entry, className, align = "end", open, onOpenChan
   const user = useUser();
   const groupCommands = useGroupCommands(user.id);
   const selection = useSelection();
+  const qc = useQueryClient();
+  const { data: collections } = useCollections();
+  const editable = entry.user_id === user.id;
+  const contextCollection = collections?.find((collection) => collection.id === contextCollectionId);
+  const canOrganizeContext = !!contextCollectionId && canEditCollection(contextCollection);
 
   const toggle = (patch: Parameters<typeof update.mutate>[0]["patch"]) =>
     update.mutate({ id: entry.id, patch }, { onError: (e) => toast.error(errorMessage(e)) });
@@ -108,17 +116,17 @@ export function EntryActions({ entry, className, align = "end", open, onOpenChan
           <Ellipsis className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align={align} onClick={(e) => e.stopPropagation()} className="mobile-action-menu w-56">
-          {selection && <DropdownMenuItem onSelect={() => selection.start(entry.id)}><CheckSquare /> Select</DropdownMenuItem>}
-          <DropdownMenuItem onSelect={() => toggle({ is_pinned: !entry.is_pinned })}>
+          {selection && editable && <DropdownMenuItem onSelect={() => selection.start(entry.id)}><CheckSquare /> Select</DropdownMenuItem>}
+          {editable && <DropdownMenuItem onSelect={() => toggle({ is_pinned: !entry.is_pinned })}>
             {entry.is_pinned ? <PinOff /> : <Pin />} {entry.is_pinned ? "Unpin" : "Pin to top"}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => toggle({ is_favorite: !entry.is_favorite })}>
+          </DropdownMenuItem>}
+          {editable && <DropdownMenuItem onSelect={() => toggle({ is_favorite: !entry.is_favorite })}>
             {entry.is_favorite ? <StarOff /> : <Star />} {entry.is_favorite ? "Remove favorite" : "Favorite"}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setCollectionsOpen(true)}>
+          </DropdownMenuItem>}
+          {editable && <DropdownMenuItem onSelect={() => setCollectionsOpen(true)}>
             <FolderPlus /> Add to collection…
-          </DropdownMenuItem>
-          {entry.group_id ? (
+          </DropdownMenuItem>}
+          {editable && (entry.group_id ? (
             <DropdownMenuItem onSelect={() => groupCommands.removeEntries([entry]).catch((e) => toast.error(errorMessage(e)))}>
               <Ungroup /> Remove from group
             </DropdownMenuItem>
@@ -126,11 +134,23 @@ export function EntryActions({ entry, className, align = "end", open, onOpenChan
             <DropdownMenuItem onSelect={() => setGroupOpen(true)}>
               <Layers /> Add to group…
             </DropdownMenuItem>
-          )}
-          <DropdownMenuItem onSelect={() => openReminder({ entryId: entry.id, title: entry.title ?? undefined })}>
+          ))}
+          {editable && <DropdownMenuItem onSelect={() => openReminder({ entryId: entry.id, title: entry.title ?? undefined })}>
             <Bell /> Remind me…
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
+          </DropdownMenuItem>}
+          {canOrganizeContext && (
+            <DropdownMenuItem
+              onSelect={() =>
+                removeEntriesFromCollection([entry.id], contextCollectionId!).then(
+                  () => invalidateData(qc),
+                  (error) => toast.error(errorMessage(error)),
+                )
+              }
+            >
+              <FolderPlus className="rotate-45" /> Remove from this collection
+            </DropdownMenuItem>
+          )}
+          {editable && <DropdownMenuSeparator />}
           {entry.url && (
             <DropdownMenuItem onSelect={() => window.open(entry.url!, "_blank", "noopener,noreferrer")}>
               <ExternalLink /> Open link
@@ -147,18 +167,18 @@ export function EntryActions({ entry, className, align = "end", open, onOpenChan
           >
             <Copy /> Copy {entry.url ? "link" : "text"}
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
+          {editable && <DropdownMenuSeparator />}
+          {editable && <DropdownMenuItem
             onSelect={() => {
               closeIfOpen();
               commands.setArchived([entry.id], !entry.is_archived).catch((e) => toast.error(errorMessage(e)));
             }}
           >
             {entry.is_archived ? <ArchiveRestore /> : <Archive />} {entry.is_archived ? "Unarchive" : "Archive"}
-          </DropdownMenuItem>
-          <DropdownMenuItem destructive onSelect={() => commands.remove([entry.id], closeIfOpen)}>
+          </DropdownMenuItem>}
+          {editable && <DropdownMenuItem destructive onSelect={() => commands.remove([entry.id], closeIfOpen)}>
             <Trash2 /> Delete
-          </DropdownMenuItem>
+          </DropdownMenuItem>}
         </DropdownMenuContent>
       </DropdownMenu>
       {/* React events bubble through portals; keep sheet clicks from reaching the card. */}

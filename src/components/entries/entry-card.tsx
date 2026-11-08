@@ -9,6 +9,7 @@ import { useGroups } from "@/lib/data/groups";
 import type { Entry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useStash } from "@/components/shell/stash-context";
+import { useUser } from "@/lib/user-context";
 import { AttachmentAudio, AttachmentFile, MediaGrid } from "./media";
 import { LinkCard } from "./link-card";
 import { EntryActions } from "./entry-actions";
@@ -27,6 +28,7 @@ export const EntryCard = memo(function EntryCard({
   layout = "list",
   inGroup = false,
   noDrag = false,
+  contextCollectionId,
 }: {
   entry: Entry;
   layout?: "list" | "grid";
@@ -34,13 +36,17 @@ export const EntryCard = memo(function EntryCard({
   inGroup?: boolean;
   /** Not draggable (e.g. the pinned strip, which repeats entries from the list). */
   noDrag?: boolean;
+  /** Collection currently being viewed, used for collection-level actions. */
+  contextCollectionId?: string;
 }) {
   const { openEntry } = useStash();
   const { data: collections } = useCollections();
   const { data: groups } = useGroups();
+  const user = useUser();
   const selection = useSelection();
   const dnd = useInboxDnd();
-  const drag = useEntryDnd(entry, noDrag);
+  const editable = entry.user_id === user.id;
+  const drag = useEntryDnd(entry, noDrag || !editable);
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const press = useContextPress(() => setActionsOpen(true), !entry.pending && !selection?.active);
@@ -53,7 +59,7 @@ export const EntryCard = memo(function EntryCard({
   const group = !inGroup && entry.group_id ? groups?.find((g) => g.id === entry.group_id) : undefined;
   const targetGroup = entry.group_id ? groups?.find((g) => g.id === entry.group_id) : undefined;
   const isGrid = layout === "grid";
-  const selecting = !!selection?.active && !entry.pending;
+  const selecting = !!selection?.active && !entry.pending && editable;
   const selected = !!selection?.isSelected(entry.id);
 
   const activate = () => {
@@ -97,7 +103,7 @@ export const EntryCard = memo(function EntryCard({
           {targetGroup ? `Add to ${targetGroup.title}` : "Create group"}
         </span>
       )}
-      {selection && !entry.pending && (
+      {selection && !entry.pending && editable && (
         <button
           type="button"
           role="checkbox"
@@ -193,7 +199,7 @@ export const EntryCard = memo(function EntryCard({
 
       {!entry.pending && !selecting && (
         <div className="absolute top-2 right-2 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:has-[[data-state=open]]:opacity-100">
-          <EntryActions entry={entry} open={actionsOpen} onOpenChange={setActionsOpen} />
+          <EntryActions entry={entry} contextCollectionId={contextCollectionId} open={actionsOpen} onOpenChange={setActionsOpen} />
         </div>
       )}
 

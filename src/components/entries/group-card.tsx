@@ -229,7 +229,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
           {members.isLoading && <div className="grid place-items-center p-4"><Spinner /></div>}
           {members.error && <ErrorState error={members.error} onRetry={() => members.refetch()} />}
           {loadedMembers.map((e) => (
-            <EntryCard key={e.id} entry={e} layout="list" inGroup noDrag />
+            <EntryCard key={e.id} entry={e} layout="list" inGroup noDrag contextCollectionId={contextCollectionId} />
           ))}
           {members.hasNextPage && <Button variant="ghost" disabled={members.isFetchingNextPage} onClick={() => void members.fetchNextPage()}>Load more from this group</Button>}
           </div>

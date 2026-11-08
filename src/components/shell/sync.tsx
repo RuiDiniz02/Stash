@@ -10,7 +10,17 @@ import { invalidateData } from "@/lib/data/keys";
 import { flushOutbox, getQueued, subscribeOutbox } from "@/lib/outbox";
 import { useUser } from "@/lib/user-context";
 
-const TABLES = ["entries", "attachments", "collections", "entry_collections", "tags", "entry_tags", "reminders", "entry_groups"] as const;
+const PERSONAL_TABLES = ["reminders", "entry_groups"] as const;
+const COLLABORATIVE_TABLES = [
+  "entries",
+  "attachments",
+  "collections",
+  "entry_collections",
+  "tags",
+  "entry_tags",
+  "collection_members",
+  "collection_invites",
+] as const;
 
 /** Cross-device sync: Postgres Changes (RLS-filtered) invalidate the affected queries. */
 export function RealtimeSync() {
@@ -36,8 +46,14 @@ export function RealtimeSync() {
       if (cancelled) return;
 
       let ch = supabase.channel(`stash-sync-${user.id}`);
-      for (const table of TABLES) {
+      for (const table of PERSONAL_TABLES) {
         ch = ch.on("postgres_changes", { event: "*", schema: "public", table, filter: `user_id=eq.${user.id}` }, schedule);
+      }
+      // Shared rows can be owned by another member, so filtering by the current
+      // user's id would hide legitimate changes. Realtime applies each table's
+      // RLS policies before delivering these events.
+      for (const table of COLLABORATIVE_TABLES) {
+        ch = ch.on("postgres_changes", { event: "*", schema: "public", table }, schedule);
       }
       channel = ch.subscribe((status, err) => {
         if (process.env.NODE_ENV !== "production") console.debug("[realtime]", status, err?.message ?? "");

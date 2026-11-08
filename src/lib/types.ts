@@ -63,6 +63,32 @@ export interface Collection {
   created_at: string;
   updated_at: string;
   entry_count?: number;
+  /** Effective permission for the signed-in user. Private collections are owner-only. */
+  access_role?: CollectionRole;
+  member_count?: number;
+  pending_invite_count?: number;
+}
+
+export type CollectionRole = "owner" | "editor" | "viewer";
+
+export interface CollectionMember {
+  collection_id: string;
+  user_id: string;
+  role: Exclude<CollectionRole, "owner">;
+  invited_by: string;
+  created_at: string;
+  display_name: string | null;
+}
+
+export interface CollectionInvite {
+  id: string;
+  collection_id: string;
+  email: string;
+  role: Exclude<CollectionRole, "owner">;
+  invited_by: string;
+  accepted_by: string | null;
+  accepted_at: string | null;
+  created_at: string;
 }
 
 export interface Reminder {

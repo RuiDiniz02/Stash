@@ -97,7 +97,7 @@ export function EntryFeed({
     item.type === "group" ? (
       <GroupCard key={item.key} group={item.group} entries={item.entries} layout={layout} contextCollectionId={collectionId} />
     ) : (
-      <EntryCard key={item.key} entry={item.entry} layout={layout} />
+      <EntryCard key={item.key} entry={item.entry} layout={layout} contextCollectionId={collectionId} />
     );
 
   return (

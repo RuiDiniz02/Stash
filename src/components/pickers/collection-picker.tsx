@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { useCollectionMutations, useCollections } from "@/lib/data/collections";
+import { canEditCollection, useCollectionMutations, useCollections } from "@/lib/data/collections";
 import { CollectionIcon } from "@/components/collections/collection-icon";
 import { useUser } from "@/lib/user-context";
 import { cn, errorMessage } from "@/lib/utils";
@@ -41,7 +41,7 @@ export function CollectionPicker({ value, onChange }: { value: string[]; onChang
 
   return (
     <div className="flex flex-wrap gap-1.5">
-      {collections?.map((c) => {
+      {collections?.filter(canEditCollection).map((c) => {
         const selected = value.includes(c.id);
         return (
           <button
