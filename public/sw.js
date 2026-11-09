@@ -1,4 +1,5 @@
 /* Stash service worker: offline shell, static caching, Web Share Target, notifications. */
+// Bump the cache version whenever a release changes the app shell.
 const VERSION = "stash-v5";
 // On slow mobile networks, fall back to the cached page after this long instead of waiting.
 const NAVIGATION_TIMEOUT_MS = 3000;
