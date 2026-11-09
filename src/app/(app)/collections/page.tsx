@@ -36,8 +36,32 @@ function Collections() {
   const [sharing, setSharing] = useState<Collection | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[] | null>(null);
+  const selectionActive = selected !== null;
   const owned = collections?.filter((c) => c.user_id === user.id) ?? [];
   const selectedIds = owned.filter((c) => selected?.includes(c.id)).map((c) => c.id);
+
+  useEffect(() => {
+    if (!selectionActive) return;
+
+    function leaveSelection(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("[data-collection-selection-interactive], [role=dialog], [data-radix-popper-content-wrapper]")) return;
+      setSelected(null);
+    }
+
+    function leaveSelectionWithKeyboard(event: KeyboardEvent) {
+      if (event.key !== "Escape" || document.querySelector("[role=dialog]")) return;
+      setSelected(null);
+    }
+
+    document.addEventListener("pointerdown", leaveSelection);
+    document.addEventListener("keydown", leaveSelectionWithKeyboard);
+    return () => {
+      document.removeEventListener("pointerdown", leaveSelection);
+      document.removeEventListener("keydown", leaveSelectionWithKeyboard);
+    };
+  }, [selectionActive]);
 
   useEffect(() => {
     if (params.get("new") === "1") {
@@ -112,7 +136,7 @@ function Collections() {
         subtitle={collections ? `${collections.length} collection${collections.length === 1 ? "" : "s"}` : undefined}
         actions={
           selected ? (
-            <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => setSelected(null)}>Done</Button>
+            <Button data-collection-selection-interactive size="sm" variant="ghost" disabled={remove.isPending} onClick={() => setSelected(null)}>Done</Button>
           ) : (
             <>
               {owned.length > 0 && <Button size="icon" variant="ghost" aria-label="Select collections" onClick={() => setSelected([])}><CheckSquare /></Button>}
@@ -123,7 +147,7 @@ function Collections() {
       />
       <div className="mx-auto max-w-5xl px-4 pt-4 md:px-8">
         {selected && (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div data-collection-selection-interactive className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm text-muted-foreground" aria-live="polite">{selectedIds.length} selected</span>
             <Button size="sm" variant="destructive" disabled={!selectedIds.length || remove.isPending} onClick={() => void deleteSelected()}>
               <Trash2 /> Delete selected
@@ -157,9 +181,10 @@ function Collections() {
         )}
         {collections && collections.length > 0 && (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {(selected ? owned : collections).map((c) => (
+            {collections.map((c) => (
               <li
                 key={c.id}
+                data-collection-selection-interactive={selected ? "" : undefined}
                 draggable={!selected && c.access_role === "owner"}
                 onDragStart={(e) => {
                   setDragId(c.id);
@@ -175,21 +200,38 @@ function Collections() {
                 onDragEnd={() => setDragId(null)}
                 className={cn("group relative animate-fade-up", dragId === c.id && "opacity-40")}
               >
-                {selected ? (
+                {selected && c.access_role === "owner" ? (
                   <button
                     type="button"
                     role="checkbox"
                     aria-checked={selectedIds.includes(c.id)}
                     disabled={remove.isPending}
                     onClick={() => setSelected((prev) => prev?.includes(c.id) ? prev.filter((id) => id !== c.id) : [...(prev ?? []), c.id])}
-                    className={cn("flex h-full min-h-28 w-full min-w-0 flex-col justify-between gap-4 rounded-2xl border bg-card p-4 text-left", selectedIds.includes(c.id) && "ring-2 ring-primary")}
+                    className={cn("flex h-full min-h-28 w-full min-w-0 flex-col justify-between gap-4 rounded-2xl border bg-card p-4 text-left shadow-soft", selectedIds.includes(c.id) && "ring-2 ring-primary")}
                   >
                     <span className="flex w-full items-center justify-between gap-2">
                       <CollectionIcon icon={c.icon} color={c.color} size="lg" />
                       <span aria-hidden className="text-primary">{selectedIds.includes(c.id) ? "✓" : "○"}</span>
                     </span>
-                    <span className="w-full truncate text-sm font-semibold">{c.name}</span>
+                    <span className="w-full min-w-0">
+                      <span className="block truncate text-sm font-semibold">{c.name}</span>
+                      <span className="block text-xs text-muted-foreground">{c.entry_count} item{c.entry_count === 1 ? "" : "s"}</span>
+                    </span>
                   </button>
+                ) : selected ? (
+                  <div
+                    aria-label={`${c.name}, shared with you, not selectable for deletion`}
+                    className="flex h-full min-h-28 w-full min-w-0 flex-col justify-between gap-4 rounded-2xl border bg-card p-4 text-left opacity-65 shadow-soft"
+                  >
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <CollectionIcon icon={c.icon} color={c.color} size="lg" />
+                      <Users aria-hidden className="size-4 text-muted-foreground" />
+                    </span>
+                    <span className="w-full min-w-0">
+                      <span className="block truncate text-sm font-semibold">{c.name}</span>
+                      <span className="block text-xs text-muted-foreground">{c.entry_count} item{c.entry_count === 1 ? "" : "s"} · shared</span>
+                    </span>
+                  </div>
                 ) : (<>
                 <Link
                   href={`/collections/${c.id}`}

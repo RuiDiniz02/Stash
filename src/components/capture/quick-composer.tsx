@@ -107,20 +107,27 @@ export function QuickComposer({ collectionId, groupId, docked = false }: { colle
             setFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])]); e.target.value = "";
           }} />
           <button type="button" disabled={saving} onClick={() => fileInput.current?.click()} aria-label="Attach photos, videos or files" className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground"><Paperclip className="size-5" /></button>
-          <textarea
-            ref={bodyInput}
-            value={text} disabled={saving || !ready} onChange={(e) => updateDraft(e.target.value, title)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (e.metaKey || e.ctrlKey || window.matchMedia("(pointer: fine)").matches)) {
-                e.preventDefault(); void submit();
-              }
-            }}
-            onPaste={(e) => {
-              if (e.clipboardData.files.length) { e.preventDefault(); setFiles((prev) => [...prev, ...Array.from(e.clipboardData.files)]); }
-            }}
-            rows={1} maxLength={50000} placeholder={groupId ? "Add to this idea…" : "Save a thought, link or file…"} aria-label="Quick capture"
-            className="field-sizing-content max-h-40 min-h-11 min-w-0 flex-1 resize-none bg-transparent px-1 py-3 text-[16px] leading-5 outline-none placeholder:text-muted-foreground/60 disabled:opacity-70"
-          />
+          <div className="relative min-w-0 flex-1">
+            {ready && !text && (
+              <span aria-hidden className="pointer-events-none absolute inset-x-1 top-3 truncate text-[16px] leading-5 text-muted-foreground/60 sm:hidden">
+                {groupId ? "Add to idea…" : "Save a thought…"}
+              </span>
+            )}
+            <textarea
+              ref={bodyInput}
+              value={text} disabled={saving || !ready} onChange={(e) => updateDraft(e.target.value, title)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (e.metaKey || e.ctrlKey || window.matchMedia("(pointer: fine)").matches)) {
+                  e.preventDefault(); void submit();
+                }
+              }}
+              onPaste={(e) => {
+                if (e.clipboardData.files.length) { e.preventDefault(); setFiles((prev) => [...prev, ...Array.from(e.clipboardData.files)]); }
+              }}
+              rows={1} maxLength={50000} placeholder={groupId ? "Add to this idea…" : "Save a thought, link or file…"} aria-label="Quick capture"
+              className="field-sizing-content max-h-40 min-h-11 w-full min-w-0 resize-none bg-transparent px-1 py-3 text-[16px] leading-5 outline-none placeholder:text-transparent disabled:opacity-70 sm:placeholder:text-muted-foreground/60"
+            />
+          </div>
           {!text.trim() && !files.length && (
             <button type="button" onClick={() => openCapture({ voice: true, title, collectionIds, groupId })} aria-label="Record a voice note" className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent"><Mic className="size-[18px]" /></button>
           )}
