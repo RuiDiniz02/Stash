@@ -310,7 +310,7 @@ function DataAndAccount() {
   async function onExport() {
     setExporting(true);
     try {
-      const { entries, files } = await exportData(user.email);
+      const { entries, files } = await exportData(user.id, user.email);
       toast.success(`Exported ${entries} entries and ${files} file links`);
     } catch (e) {
       toast.error(errorMessage(e, "Export failed"));

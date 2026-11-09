@@ -3,12 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, isPast } from "date-fns";
-import { Bell, Check, Link2, Paperclip, Pin, Plus, RefreshCw, Repeat, Star, Trash2, X } from "lucide-react";
+import { Bell, Check, Link2, Paperclip, Plus, RefreshCw, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ErrorState, Skeleton, Spinner } from "@/components/ui/misc";
-import { TagInput } from "@/components/pickers/tag-input";
 import { CollectionPicker } from "@/components/pickers/collection-picker";
 import { Lightbox } from "@/components/media/lightbox";
 import {
@@ -16,7 +15,6 @@ import {
   deriveKind,
   refreshLinkPreview,
   setEntryCollections,
-  setEntryTags,
   useEntry,
   useEntryCommands,
   useUpdateEntry,
@@ -55,7 +53,6 @@ function EntryDetail({ entryId, onClose }: { entryId: string; onClose: () => voi
         <DialogTitle className="flex-1 truncate px-1 text-sm font-medium text-muted-foreground">
           {entry ? format(new Date(entry.created_at), "EEEE, d MMM yyyy · HH:mm") : "Entry"}
         </DialogTitle>
-        {entry && editable && <HeaderToggles entry={entry} />}
         {entry && <EntryActions entry={entry} />}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -74,30 +71,6 @@ function EntryDetail({ entryId, onClose }: { entryId: string; onClose: () => voi
   );
 }
 
-function HeaderToggles({ entry }: { entry: Entry }) {
-  const update = useUpdateEntry();
-  return (
-    <>
-      <button
-        onClick={() => update.mutate({ id: entry.id, patch: { is_pinned: !entry.is_pinned } })}
-        aria-pressed={entry.is_pinned}
-        aria-label={entry.is_pinned ? "Unpin" : "Pin"}
-        className={cn("grid size-8 place-items-center rounded-lg hover:bg-accent", entry.is_pinned ? "text-primary" : "text-muted-foreground")}
-      >
-        <Pin className={cn("size-4", entry.is_pinned && "fill-current")} />
-      </button>
-      <button
-        onClick={() => update.mutate({ id: entry.id, patch: { is_favorite: !entry.is_favorite } })}
-        aria-pressed={entry.is_favorite}
-        aria-label={entry.is_favorite ? "Remove favorite" : "Favorite"}
-        className={cn("grid size-8 place-items-center rounded-lg hover:bg-accent", entry.is_favorite ? "text-amber-400" : "text-muted-foreground")}
-      >
-        <Star className={cn("size-4", entry.is_favorite && "fill-current")} />
-      </button>
-    </>
-  );
-}
-
 function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boolean }) {
   const user = useUser();
   const qc = useQueryClient();
@@ -107,9 +80,7 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
   const commands = useEntryCommands();
   const [title, setTitle] = useState(entry.title ?? "");
   const [body, setBody] = useState(entry.body ?? "");
-  const [description, setDescription] = useState(entry.description ?? "");
   const [url, setUrl] = useState(entry.url ?? "");
-  const [tags, setTags] = useState(entry.tags.map((t) => t.name));
   const [collectionIds, setCollectionIds] = useState(entry.collection_ids);
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -117,7 +88,6 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
   const fileInput = useRef<HTMLInputElement>(null);
 
   // Keep local fields in sync when the entry changes on another device.
-  useEffect(() => setTags(entry.tags.map((t) => t.name)), [entry.tags]);
   useEffect(() => setCollectionIds(entry.collection_ids), [entry.collection_ids]);
 
   const visual = entry.attachments.filter((a) => a.kind === "image" || a.kind === "video");
@@ -161,8 +131,6 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
         )}
         {audio.map((attachment) => <AttachmentAudio key={attachment.id} att={attachment} />)}
         {files.map((attachment) => <AttachmentFile key={attachment.id} att={attachment} />)}
-        {entry.description && <p className="rounded-xl border bg-muted/30 p-3 text-sm text-muted-foreground">{entry.description}</p>}
-        {entry.tags.length > 0 && <p className="text-xs text-muted-foreground">{entry.tags.map((tag) => `#${tag.name}`).join(" · ")}</p>}
         <p className="border-t pt-4 text-xs text-muted-foreground">
           Shared entry · Saved {format(new Date(entry.created_at), "d MMM yyyy, HH:mm")}
         </p>
@@ -176,7 +144,7 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
     );
   }
 
-  function save(field: "title" | "body" | "description", value: string) {
+  function save(field: "title" | "body", value: string) {
     const clean = value.trim() || null;
     if (clean === (entry[field] ?? null)) return;
     update.mutate({ id: entry.id, patch: { [field]: clean } }, { onError: (e) => toast.error(errorMessage(e)) });
@@ -201,16 +169,6 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
         onError: (e) => toast.error(errorMessage(e)),
       },
     );
-  }
-
-  async function onTags(next: string[]) {
-    setTags(next);
-    try {
-      await setEntryTags(user.id, entry.id, next);
-      await invalidateData(qc);
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
   }
 
   async function onCollections(next: string[]) {
@@ -349,17 +307,6 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
         </button>
       </div>
 
-      <Field label="Description">
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          onBlur={() => save("description", description)}
-          placeholder="Why did you save this?"
-          maxLength={5000}
-          className="field-sizing-content min-h-10 w-full resize-none rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none focus-visible:border-primary/60 focus-visible:ring-3 focus-visible:ring-primary/15"
-        />
-      </Field>
-
       <Field label="Link">
         <div className="relative">
           <Link2 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -373,10 +320,6 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
             className="pl-9"
           />
         </div>
-      </Field>
-
-      <Field label="Tags">
-        <TagInput value={tags} onChange={(t) => void onTags(t)} />
       </Field>
 
       <Field label="Collections">

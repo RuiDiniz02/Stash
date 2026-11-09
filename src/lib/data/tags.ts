@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { useUser } from "@/lib/user-context";
 import type { Tag } from "@/lib/types";
 
 export function normalizeTagName(name: string) {
@@ -16,7 +17,7 @@ export async function ensureTags(userId: string, names: string[]): Promise<Tag[]
   );
   if (!clean.length) return [];
 
-  const { data: existing, error } = await supabase.from("tags").select("id,name");
+  const { data: existing, error } = await supabase.from("tags").select("id,name").eq("user_id", userId);
   if (error) throw error;
   const byLower = new Map((existing ?? []).map((t) => [String(t.name).toLowerCase(), t as Tag]));
   const missing = clean.filter((n) => !byLower.has(n.toLowerCase()));
@@ -37,10 +38,11 @@ export interface TagWithCount extends Tag {
 }
 
 export function useTags() {
+  const { id: userId } = useUser();
   return useQuery({
     queryKey: ["tags"],
     queryFn: async () => {
-      const { data, error } = await createClient().from("tags").select("id,name,entry_tags(count)").order("name");
+      const { data, error } = await createClient().from("tags").select("id,name,entry_tags(count)").eq("user_id", userId).order("name");
       if (error) throw error;
       return (data ?? []).map((t) => ({
         id: t.id as string,

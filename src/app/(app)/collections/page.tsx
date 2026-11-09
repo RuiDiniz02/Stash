@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowUp, Ellipsis, FolderPlus, GripVertical, Pencil, Plus, Share2, Sparkles, Trash2, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckSquare, Ellipsis, FolderPlus, GripVertical, Pencil, Share2, Sparkles, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,9 @@ function Collections() {
   const [dialog, setDialog] = useState<{ open: boolean; collection: Collection | null }>({ open: false, collection: null });
   const [sharing, setSharing] = useState<Collection | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[] | null>(null);
+  const owned = collections?.filter((c) => c.user_id === user.id) ?? [];
+  const selectedIds = owned.filter((c) => selected?.includes(c.id)).map((c) => c.id);
 
   useEffect(() => {
     if (params.get("new") === "1") {
@@ -45,7 +48,7 @@ function Collections() {
 
   function move(id: string, delta: number) {
     if (!collections) return;
-    const ids = collections.map((c) => c.id);
+    const ids = owned.map((c) => c.id);
     const i = ids.indexOf(id);
     const j = i + delta;
     if (j < 0 || j >= ids.length) return;
@@ -54,8 +57,8 @@ function Collections() {
   }
 
   function dropOn(targetId: string) {
-    if (!collections || !dragId || dragId === targetId) return;
-    const ids = collections.map((c) => c.id).filter((id) => id !== dragId);
+    if (!dragId || dragId === targetId || !owned.some((c) => c.id === targetId)) return;
+    const ids = owned.map((c) => c.id).filter((id) => id !== dragId);
     ids.splice(ids.indexOf(targetId), 0, dragId);
     reorder.mutate(ids);
     setDragId(null);
@@ -73,7 +76,7 @@ function Collections() {
   }
 
   async function addSuggested() {
-    const existing = new Set((collections ?? []).map((c) => c.name.toLowerCase()));
+    const existing = new Set(owned.map((c) => c.name.toLowerCase()));
     const toAdd = SUGGESTED_COLLECTIONS.filter((s) => !existing.has(s.name.toLowerCase()));
     if (!toAdd.length) return;
     try {
@@ -84,18 +87,49 @@ function Collections() {
     }
   }
 
+  async function deleteSelected() {
+    if (!selectedIds.length || remove.isPending) return;
+    const ok = await confirm({
+      title: `Delete ${selectedIds.length} selected ${selectedIds.length === 1 ? "collection" : "collections"}?`,
+      description: "Notes are kept. If a collection is shared, its members lose access to it.",
+      confirmLabel: "Delete selected",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      const count = await remove.mutateAsync(selectedIds);
+      setSelected(null);
+      toast.success(`Deleted ${count} ${count === 1 ? "collection" : "collections"}`);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  }
+
   return (
     <>
       <PageHeader
         title="Collections"
         subtitle={collections ? `${collections.length} collection${collections.length === 1 ? "" : "s"}` : undefined}
         actions={
-          <Button size="sm" onClick={() => setDialog({ open: true, collection: null })}>
-            <Plus /> New
-          </Button>
+          selected ? (
+            <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => setSelected(null)}>Done</Button>
+          ) : (
+            <>
+              {owned.length > 0 && <Button size="icon" variant="ghost" aria-label="Select collections" onClick={() => setSelected([])}><CheckSquare /></Button>}
+              <Button size="sm" onClick={() => setDialog({ open: true, collection: null })}><FolderPlus /> New collection</Button>
+            </>
+          )
         }
       />
       <div className="mx-auto max-w-5xl px-4 pt-4 md:px-8">
+        {selected && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm text-muted-foreground" aria-live="polite">{selectedIds.length} selected</span>
+            <Button size="sm" variant="destructive" disabled={!selectedIds.length || remove.isPending} onClick={() => void deleteSelected()}>
+              <Trash2 /> Delete selected
+            </Button>
+          </div>
+        )}
         {isLoading && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -104,7 +138,7 @@ function Collections() {
           </div>
         )}
         {error && <ErrorState error={error} onRetry={() => refetch()} />}
-        {collections && collections.length === 0 && (
+        {!selected && collections && collections.length === 0 && (
           <EmptyState
             icon={FolderPlus}
             title="Organize when you're ready"
@@ -112,7 +146,7 @@ function Collections() {
             action={
               <div className="flex flex-col items-center gap-2 sm:flex-row">
                 <Button onClick={() => setDialog({ open: true, collection: null })}>
-                  <Plus /> New collection
+                  <FolderPlus /> New collection
                 </Button>
                 <Button variant="outline" onClick={() => void addSuggested()} disabled={create.isPending}>
                   <Sparkles /> Add suggested
@@ -123,10 +157,10 @@ function Collections() {
         )}
         {collections && collections.length > 0 && (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {collections.map((c, i) => (
+            {(selected ? owned : collections).map((c) => (
               <li
                 key={c.id}
-                draggable={c.access_role === "owner"}
+                draggable={!selected && c.access_role === "owner"}
                 onDragStart={(e) => {
                   setDragId(c.id);
                   e.dataTransfer.effectAllowed = "move";
@@ -141,6 +175,22 @@ function Collections() {
                 onDragEnd={() => setDragId(null)}
                 className={cn("group relative animate-fade-up", dragId === c.id && "opacity-40")}
               >
+                {selected ? (
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={selectedIds.includes(c.id)}
+                    disabled={remove.isPending}
+                    onClick={() => setSelected((prev) => prev?.includes(c.id) ? prev.filter((id) => id !== c.id) : [...(prev ?? []), c.id])}
+                    className={cn("flex h-full min-h-28 w-full min-w-0 flex-col justify-between gap-4 rounded-2xl border bg-card p-4 text-left", selectedIds.includes(c.id) && "ring-2 ring-primary")}
+                  >
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <CollectionIcon icon={c.icon} color={c.color} size="lg" />
+                      <span aria-hidden className="text-primary">{selectedIds.includes(c.id) ? "✓" : "○"}</span>
+                    </span>
+                    <span className="w-full truncate text-sm font-semibold">{c.name}</span>
+                  </button>
+                ) : (<>
                 <Link
                   href={`/collections/${c.id}`}
                   className="flex h-full min-h-28 flex-col justify-between gap-4 rounded-2xl border bg-card p-4 shadow-soft transition hover:shadow-float"
@@ -155,8 +205,8 @@ function Collections() {
                 </Link>
                 {c.access_role === "owner" && <GripVertical aria-hidden className="absolute top-4 right-11 hidden size-4 cursor-grab text-muted-foreground/50 opacity-0 transition group-hover:opacity-100 md:block" />}
                 {(c.member_count ?? 0) + (c.pending_invite_count ?? 0) > 0 && (
-                  <span className="pointer-events-none absolute top-3 left-3 inline-flex h-7 items-center gap-1 rounded-full border bg-card/95 px-2 text-[11px] font-medium text-muted-foreground shadow-soft">
-                    <Users className="size-3" /> {c.access_role === "owner" ? "Shared" : "Shared with you"}
+                  <span className="pointer-events-none absolute top-3 right-12 grid size-7 place-items-center rounded-full border bg-card text-muted-foreground" role="img" aria-label={c.access_role === "owner" ? "Shared" : "Shared with you"}>
+                    <Users className="size-3.5" />
                   </span>
                 )}
                 <DropdownMenu>
@@ -175,10 +225,10 @@ function Collections() {
                         <DropdownMenuItem onSelect={() => setDialog({ open: true, collection: c })}>
                           <Pencil /> Rename & style
                         </DropdownMenuItem>
-                        <DropdownMenuItem disabled={i === 0} onSelect={() => move(c.id, -1)}>
+                        <DropdownMenuItem disabled={owned[0]?.id === c.id} onSelect={() => move(c.id, -1)}>
                           <ArrowUp /> Move up
                         </DropdownMenuItem>
-                        <DropdownMenuItem disabled={i === collections.length - 1} onSelect={() => move(c.id, 1)}>
+                        <DropdownMenuItem disabled={owned.at(-1)?.id === c.id} onSelect={() => move(c.id, 1)}>
                           <ArrowDown /> Move down
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
@@ -189,11 +239,12 @@ function Collections() {
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                </>)}
               </li>
             ))}
           </ul>
         )}
-        {collections && collections.length > 0 && collections.length < SUGGESTED_COLLECTIONS.length && (
+        {!selected && collections && collections.length > 0 && collections.length < SUGGESTED_COLLECTIONS.length && (
           <button onClick={() => void addSuggested()} className="mt-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <Sparkles className="size-4" /> Add suggested collections
           </button>

@@ -8,6 +8,7 @@ import { extractUrl, isBareUrl, uuid } from "@/lib/utils";
 import { invalidateData } from "@/lib/data/keys";
 import { deferWithUndo, toastWithUndo } from "@/lib/undo";
 import { ensureTags } from "@/lib/data/tags";
+import { useUser } from "@/lib/user-context";
 import type { Attachment, Entry, EntryKind, EntryRow, LinkPreview, Reminder, RepeatInterval } from "@/lib/types";
 
 export const ENTRY_COLUMNS =
@@ -45,7 +46,7 @@ export interface EntryFilter {
   groupId?: string;
 }
 
-async function fetchEntryPage(filter: EntryFilter, page: number) {
+async function fetchEntryPage(filter: EntryFilter, page: number, userId: string, includeArchived = false) {
   const supabase = createClient();
   const from = page * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
@@ -66,9 +67,9 @@ async function fetchEntryPage(filter: EntryFilter, page: number) {
     return (data as unknown as RawEntry[]).map(normalizeEntry);
   }
 
-  let query = supabase.from("entries").select(ENTRY_SELECT);
+  let query = supabase.from("entries").select(ENTRY_SELECT).eq("user_id", userId);
   if (filter.groupId) query = query.eq("group_id", filter.groupId);
-  switch (filter.view ?? "inbox") {
+  if (!includeArchived) switch (filter.view ?? "inbox") {
     case "archived":
       query = query.eq("is_archived", true);
       break;
@@ -98,26 +99,28 @@ export function entriesKey(filter: EntryFilter) {
 }
 
 export function useEntries(filter: EntryFilter, enabled = true) {
+  const { id: userId } = useUser();
   return useInfiniteQuery({
     queryKey: entriesKey(filter),
     enabled,
-    queryFn: ({ pageParam }) => fetchEntryPage(filter, pageParam),
+    queryFn: ({ pageParam }) => fetchEntryPage(filter, pageParam, userId),
     initialPageParam: 0,
     getNextPageParam: (last, all) => (last.length === PAGE_SIZE ? all.length : undefined),
   });
 }
 
 /** Bulk group operations must include members beyond the Inbox's current page. */
-export async function fetchGroupEntries(groupId: string) {
+export async function fetchGroupEntries(groupId: string, userId: string, includeArchived = false) {
   const entries: Entry[] = [];
   for (let page = 0; ; page++) {
-    const batch = await fetchEntryPage({ groupId }, page);
+    const batch = await fetchEntryPage({ groupId }, page, userId, includeArchived);
     entries.push(...batch);
     if (batch.length < PAGE_SIZE) return entries;
   }
 }
 
 export function usePinnedEntries(enabled = true) {
+  const { id: userId } = useUser();
   return useQuery({
     queryKey: ["entries", "pinned-strip"],
     enabled,
@@ -125,6 +128,7 @@ export function usePinnedEntries(enabled = true) {
       const { data, error } = await createClient()
         .from("entries")
         .select(ENTRY_SELECT)
+        .eq("user_id", userId)
         .eq("is_pinned", true)
         .eq("is_archived", false)
         .order("updated_at", { ascending: false })

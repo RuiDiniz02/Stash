@@ -2,6 +2,7 @@
 
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { useUser } from "@/lib/user-context";
 import type { Attachment } from "@/lib/types";
 
 export interface MediaItem extends Attachment {
@@ -11,6 +12,7 @@ export interface MediaItem extends Attachment {
 const MEDIA_PAGE = 48;
 
 export function useMedia(kind: "all" | "image" | "video", order: "newest" | "oldest") {
+  const { id: userId } = useUser();
   return useInfiniteQuery({
     queryKey: ["media", kind, order],
     initialPageParam: 0,
@@ -20,6 +22,7 @@ export function useMedia(kind: "all" | "image" | "video", order: "newest" | "old
       let q = createClient()
         .from("attachments")
         .select("*,entry:entries!inner(id,title,url,body,is_archived)")
+        .eq("user_id", userId)
         .eq("entry.is_archived", false);
       q = kind === "all" ? q.in("kind", ["image", "video"]) : q.eq("kind", kind);
       const { data, error } = await q
@@ -39,12 +42,14 @@ export interface StorageUsage {
 }
 
 export function useStorageUsage() {
+  const { id: userId } = useUser();
   return useQuery({
     queryKey: ["storage"],
     queryFn: async (): Promise<StorageUsage> => {
       const { data, error } = await createClient()
         .from("attachments")
         .select("id,entry_id,storage_path,kind,file_name,size_bytes,mime_type,created_at,entries(title)")
+        .eq("user_id", userId)
         .order("size_bytes", { ascending: false });
       if (error) throw error;
       const rows = (data ?? []) as unknown as (Attachment & { entries: { title: string | null } | null })[];

@@ -36,7 +36,7 @@ async function ensureCollection(userId: string, name: string, known: Collection[
   const supabase = createClient();
   const list =
     known ??
-    (((await supabase.from("collections").select("id,name,position")).data ?? []) as Pick<Collection, "id" | "name" | "position">[]);
+    (((await supabase.from("collections").select("id,name,position").eq("user_id", userId)).data ?? []) as Pick<Collection, "id" | "name" | "position">[]);
   const existing = list.find((c) => c.name.toLowerCase() === name.trim().toLowerCase());
   if (existing) return { id: existing.id, created: false };
   const position = list.reduce((m, c) => Math.max(m, c.position ?? 0), -1) + 1;
@@ -59,7 +59,7 @@ export function useGroupCommands(userId: string) {
   const supabase = createClient();
   const refresh = () => invalidateData(qc);
   const cachedGroups = () => qc.getQueryData<EntryGroup[]>(["groups"]) ?? [];
-  const cachedCollections = () => qc.getQueryData<Collection[]>(["collections"]);
+  const cachedCollections = () => qc.getQueryData<Collection[]>(["collections"])?.filter((c) => c.user_id === userId);
 
   const snapshot = (entries: Pick<Entry, "id" | "group_id">[]): Snapshot => {
     const touched = new Set(entries.map((e) => e.group_id).filter(Boolean));

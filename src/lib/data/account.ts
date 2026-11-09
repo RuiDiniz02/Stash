@@ -5,12 +5,12 @@ import { STORAGE_BUCKET } from "@/lib/env";
 
 const EXPORT_LINK_SECONDS = 7 * 24 * 60 * 60;
 
-async function fetchAll<T>(table: string, select = "*"): Promise<T[]> {
+async function fetchAll<T>(userId: string, table: string, select = "*"): Promise<T[]> {
   const supabase = createClient();
   const rows: T[] = [];
   const page = 1000;
   for (let from = 0; ; from += page) {
-    const { data, error } = await supabase.from(table).select(select).range(from, from + page - 1);
+    const { data, error } = await supabase.from(table).select(select).eq("user_id", userId).range(from, from + page - 1);
     if (error) throw error;
     rows.push(...((data ?? []) as T[]));
     if (!data || data.length < page) break;
@@ -19,16 +19,16 @@ async function fetchAll<T>(table: string, select = "*"): Promise<T[]> {
 }
 
 /** Builds a JSON export of everything the user owns, with 7-day download links for files. */
-export async function exportData(email: string | null) {
+export async function exportData(userId: string, email: string | null) {
   const supabase = createClient();
   const [entries, collections, entryCollections, tags, entryTags, attachments, reminders] = await Promise.all([
-    fetchAll("entries", "id,kind,title,body,description,url,link_preview,is_pinned,is_favorite,is_archived,created_at,updated_at"),
-    fetchAll("collections"),
-    fetchAll("entry_collections"),
-    fetchAll("tags"),
-    fetchAll("entry_tags"),
-    fetchAll<{ storage_path: string } & Record<string, unknown>>("attachments"),
-    fetchAll("reminders"),
+    fetchAll(userId, "entries", "id,kind,title,body,description,url,link_preview,is_pinned,is_favorite,is_archived,created_at,updated_at"),
+    fetchAll(userId, "collections"),
+    fetchAll(userId, "entry_collections"),
+    fetchAll(userId, "tags"),
+    fetchAll(userId, "entry_tags"),
+    fetchAll<{ storage_path: string } & Record<string, unknown>>(userId, "attachments"),
+    fetchAll(userId, "reminders"),
   ]);
 
   const links = new Map<string, string>();
@@ -66,7 +66,7 @@ export async function exportData(email: string | null) {
 /** Deletes every stored file, then the account (all rows cascade). */
 export async function deleteAccount(userId: string) {
   const supabase = createClient();
-  const attachments = await fetchAll<{ storage_path: string }>("attachments", "storage_path");
+  const attachments = await fetchAll<{ storage_path: string }>(userId, "attachments", "storage_path");
   const paths = attachments.map((a) => a.storage_path);
 
   // Also sweep the user's folder for files that never got an attachment row.

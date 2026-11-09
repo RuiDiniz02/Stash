@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Check, ChevronDown, Ellipsis, FileText, FolderPlus, Layers, Link2, Mic, Pencil, Plus, StickyNote, Ungroup } from "lucide-react";
+import { Check, ChevronDown, Ellipsis, FileText, FolderPlus, Layers, Link2, Mic, Pencil, Plus, StickyNote, Trash2, Ungroup } from "lucide-react";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/menu";
 import { useGroupCommands } from "@/lib/data/groups";
@@ -14,7 +14,8 @@ import { EntryCard } from "./entry-card";
 import { SelectionProvider, useSelection } from "./selection";
 import { SelectionBar } from "./selection-bar";
 import { useGroupDrop, useInboxDnd } from "./dnd";
-import { fetchGroupEntries, useEntries } from "@/lib/data/entries";
+import { fetchGroupEntries, useEntries, useEntryCommands } from "@/lib/data/entries";
+import { confirm } from "@/components/ui/confirm";
 import { QuickComposer } from "@/components/capture/quick-composer";
 import { Button } from "@/components/ui/button";
 import { ErrorState, Spinner } from "@/components/ui/misc";
@@ -44,6 +45,7 @@ function MemberPreview({ entry }: { entry: Entry }) {
 export function GroupCard({ group, entries, layout, contextCollectionId }: { group: EntryGroup; entries: Entry[]; layout: "list" | "grid"; contextCollectionId?: string }) {
   const user = useUser();
   const commands = useGroupCommands(user.id);
+  const entryCommands = useEntryCommands();
   const selection = useSelection();
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -101,7 +103,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
   const headerClick = () => {
     if (press.suppressClick()) return;
     if (selection?.active) {
-      void fetchGroupEntries(group.id).then((all) => {
+      void fetchGroupEntries(group.id, user.id).then((all) => {
         const allIds = all.map((entry) => entry.id);
         setSelectionIds(allIds);
         selection.setMany(allIds, !allSelected, all);
@@ -109,6 +111,26 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
     }
     else setOpen(!open);
   };
+
+  async function deleteGroup() {
+    if (queued.length) {
+      toast.error("Wait for this group's offline captures to sync before deleting it.");
+      return;
+    }
+    try {
+      const all = await fetchGroupEntries(group.id, user.id, true);
+      if (!all.length) return;
+      const ok = await confirm({
+        title: `Delete “${group.title}” and its entries?`,
+        description: `This deletes all ${all.length} saved entries in this group, including archived ones. They will also disappear from any collection they are in. The collections themselves are kept.`,
+        confirmLabel: "Delete group and entries",
+        destructive: true,
+      });
+      if (ok) entryCommands.remove(all.map((entry) => entry.id), () => setOpen(false));
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  }
 
   return (
     <section
@@ -158,7 +180,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
             />
           </div>
         ) : (
-          <button type="button" {...press.handlers} onClick={headerClick} aria-label={`Open group ${group.title}, ${group.entry_count} items`} aria-haspopup="dialog" aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <button type="button" onClick={headerClick} aria-label={`Open group ${group.title}, ${group.entry_count} items`} aria-haspopup="dialog" aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-3 text-left after:absolute after:inset-0 after:rounded-2xl after:content-['']">
             <span
               className={cn(
                 "grid size-9 shrink-0 place-items-center rounded-xl",
@@ -179,7 +201,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
         )}
         {!selection?.active && (
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger className="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-accent data-[state=open]:bg-accent" aria-label="Group actions">
+            <DropdownMenuTrigger className="relative z-[1] grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-accent data-[state=open]:bg-accent" aria-label="Group actions">
               <Ellipsis className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="mobile-action-menu">
@@ -190,10 +212,13 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
                 <Plus /> Add entries…
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => {
-                void fetchGroupEntries(group.id).then(setCollectionEntries).catch((error) => toast.error(errorMessage(error)));
+                void fetchGroupEntries(group.id, user.id).then(setCollectionEntries).catch((error) => toast.error(errorMessage(error)));
               }}><FolderPlus /> Add group to collection…</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => commands.ungroup(group).catch((e) => toast.error(errorMessage(e)))}>
                 <Ungroup /> Ungroup
+              </DropdownMenuItem>
+              <DropdownMenuItem destructive onSelect={() => void deleteGroup()}>
+                <Trash2 /> Delete group and entries
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -201,7 +226,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
       </div>
 
       {!open && (
-        <button type="button" onClick={() => setOpen(true)} className="flex w-full min-w-0 flex-wrap gap-1.5 px-3 pb-3" aria-label="Expand group">
+        <div aria-hidden className="flex w-full min-w-0 flex-wrap gap-1.5 px-3 pb-3">
           {entries.slice(0, 5).map((e) => (
             <span key={e.id} className="relative size-14 overflow-hidden rounded-lg border">
               <MemberPreview entry={e} />
@@ -212,7 +237,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
               +{entries.length - 5}
             </span>
           )}
-        </button>
+        </div>
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>

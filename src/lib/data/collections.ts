@@ -219,9 +219,11 @@ export function useCollectionMutations(userId: string) {
   });
 
   const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("collections").delete().eq("id", id);
+    mutationFn: async (target: string | string[]) => {
+      const ids = typeof target === "string" ? [target] : target;
+      const { data, error } = await supabase.from("collections").delete().eq("user_id", userId).in("id", ids).select("id");
       if (error) throw error;
+      return data.length;
     },
     onSettled: done,
   });
@@ -238,10 +240,11 @@ export function useCollectionMutations(userId: string) {
       qc.setQueryData<Collection[]>(["collections"], (list) => {
         if (!list) return list;
         const byId = new Map(list.map((c) => [c.id, c]));
-        return orderedIds.flatMap((id, position) => {
+        const ordered = orderedIds.flatMap((id, position) => {
           const c = byId.get(id);
           return c ? [{ ...c, position }] : [];
         });
+        return [...ordered, ...list.filter((c) => c.user_id !== userId)];
       });
     },
     onSettled: done,
