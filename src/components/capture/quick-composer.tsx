@@ -109,8 +109,9 @@ export function QuickComposer({ collectionId, groupId, docked = false }: { colle
           <button type="button" disabled={saving} onClick={() => fileInput.current?.click()} aria-label="Attach photos, videos or files" className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground"><Paperclip className="size-5" /></button>
           <div className="relative min-w-0 flex-1">
             {ready && !text && (
-              <span aria-hidden className="pointer-events-none absolute inset-x-1 top-3 truncate text-[16px] leading-5 text-muted-foreground/60 sm:hidden">
-                {groupId ? "Add to idea…" : "Save a thought…"}
+              <span aria-hidden className="pointer-events-none absolute inset-x-1 top-3 truncate text-[16px] leading-5 text-muted-foreground/60">
+                <span className="sm:hidden">{groupId ? "Add to idea…" : "Save a thought…"}</span>
+                <span className="hidden sm:inline">{groupId ? "Add to this idea…" : "Save a thought, link or file…"}</span>
               </span>
             )}
             <textarea
@@ -124,8 +125,8 @@ export function QuickComposer({ collectionId, groupId, docked = false }: { colle
               onPaste={(e) => {
                 if (e.clipboardData.files.length) { e.preventDefault(); setFiles((prev) => [...prev, ...Array.from(e.clipboardData.files)]); }
               }}
-              rows={1} maxLength={50000} placeholder={groupId ? "Add to this idea…" : "Save a thought, link or file…"} aria-label="Quick capture"
-              className="field-sizing-content max-h-40 min-h-11 w-full min-w-0 resize-none bg-transparent px-1 py-3 text-[16px] leading-5 outline-none placeholder:text-transparent disabled:opacity-70 sm:placeholder:text-muted-foreground/60"
+              rows={1} maxLength={50000} placeholder={groupId ? "Add to idea…" : "Save a thought…"} aria-label="Quick capture"
+              className="field-sizing-content max-h-40 min-h-11 w-full min-w-0 resize-none bg-transparent px-1 py-3 text-[16px] leading-5 outline-none placeholder:text-transparent disabled:opacity-70"
             />
           </div>
           {!text.trim() && !files.length && (
