@@ -139,6 +139,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
         drag.setNodeRef(node);
       }}
       aria-label={`Group ${group.title}`}
+      data-drag-card
       onContextMenu={(event) => {
         event.preventDefault();
         if ((event.nativeEvent as PointerEvent).pointerType !== "touch" && window.matchMedia("(any-pointer: fine)").matches) setMenuOpen(true);
@@ -147,7 +148,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
         "entry-content relative w-full rounded-2xl border bg-card shadow-soft transition-[transform,box-shadow] duration-200 animate-fade-up",
         layout === "grid" && "mb-3 break-inside-avoid",
         allSelected && "ring-2 ring-primary",
-        drag.isDragging && "opacity-40",
+        drag.isDragging && "opacity-25",
         drag.isOver && "scale-[0.98] ring-2 ring-primary shadow-float",
       )}
     >

@@ -13,18 +13,56 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type DropAnimation,
 } from "@dnd-kit/core";
-import { FileText, Layers, Link2, Mic, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import { suggestGroupTitle, useGroupCommands } from "@/lib/data/groups";
 import { fetchGroupEntries } from "@/lib/data/entries";
 import { useUser } from "@/lib/user-context";
 import type { Entry, EntryGroup } from "@/lib/types";
 import { errorMessage } from "@/lib/utils";
-import { AttachmentImage } from "./media";
 import { useSelection } from "./selection";
 
 type DropData = { type: "entry"; entry: Entry } | { type: "group"; group: EntryGroup };
+
+function snapshotCard(target: EventTarget | null) {
+  const source = target instanceof Element ? target.closest<HTMLElement>("[data-drag-card]") : null;
+  if (!source) return null;
+  const copy = source.cloneNode(true) as HTMLElement;
+  copy.inert = true;
+  copy.removeAttribute("id");
+  copy.querySelectorAll("[id]").forEach((element) => element.removeAttribute("id"));
+  copy.classList.remove("animate-fade-up");
+  // Reuse the frame already decoded on the card. A cloned video would load from the beginning.
+  const originals = source.querySelectorAll("video");
+  copy.querySelectorAll("video").forEach((video, index) => {
+    const frame = originals[index];
+    if (!frame?.videoWidth || frame.readyState < 2) { video.remove(); return; }
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.min(frame.videoWidth, 720);
+    canvas.height = Math.round(canvas.width * frame.videoHeight / frame.videoWidth);
+    canvas.className = video.className;
+    try { canvas.getContext("2d")?.drawImage(frame, 0, 0, canvas.width, canvas.height); }
+    catch { video.remove(); return; }
+    video.replaceWith(canvas);
+  });
+  copy.querySelectorAll("audio, iframe").forEach((node) => {
+    const placeholder = document.createElement("div");
+    placeholder.className = node.className;
+    placeholder.style.height = `${node.clientHeight || 36}px`;
+    node.replaceWith(placeholder);
+  });
+  return copy;
+}
+
+function DraggedCard({ snapshot, count }: { snapshot: HTMLElement; count: number }) {
+  return (
+    <div aria-hidden className="drag-lift pointer-events-none relative">
+      <div ref={(container) => { if (container && snapshot.parentNode !== container) container.replaceChildren(snapshot); }} />
+      {count > 1 && <span className="absolute -top-2 -right-2 grid size-6 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow">{count}</span>}
+    </div>
+  );
+}
 
 function ignoreNestedControls(listeners: ReturnType<typeof useDraggable>["listeners"]) {
   return Object.fromEntries(Object.entries(listeners ?? {}).map(([name, listener]) => [name, (event: SyntheticEvent<HTMLElement>) => {
@@ -62,7 +100,22 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
   const selection = useSelection();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [namingGroupId, setNamingGroupId] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<HTMLElement | null>(null);
   const lastDragEnd = useRef(0);
+  const acceptedDrop = useRef(false);
+
+  const dropAnimation: DropAnimation = {
+    duration: 180,
+    easing: "cubic-bezier(.2,.7,.25,1)",
+    keyframes: ({ transform }) => {
+      const position = ({ x, y }: { x: number; y: number }) => `translate3d(${x}px,${y}px,0)`;
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return [];
+      return [
+        { transform: position(transform.initial), opacity: 1 },
+        { transform: position(acceptedDrop.current ? transform.initial : transform.final), opacity: 0 },
+      ];
+    },
+  };
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -83,6 +136,8 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
   );
 
   const onDragStart = (event: DragStartEvent) => {
+    acceptedDrop.current = false;
+    setSnapshot(snapshotCard(event.activatorEvent.target));
     setActiveId(String(event.active.id));
     navigator.vibrate?.(12);
   };
@@ -112,6 +167,7 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
       if (source.type === "group") {
         const targetGroup = over.type === "group" ? over.group : groups.find((group) => group.id === over.entry.group_id);
         if (targetGroup?.id === source.group.id) return;
+        acceptedDrop.current = true;
         if (targetGroup) {
           const members = await fetchGroupEntries(source.group.id, user.id, true);
           if (members.length) await commands.add(targetGroup, members);
@@ -126,10 +182,12 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
       if (!items.length) return;
       if (over.type === "group") {
         const toMove = items.filter((e) => e.group_id !== over.group.id);
+        acceptedDrop.current = toMove.length > 0;
         if (toMove.length) await commands.add(over.group, toMove);
       } else {
         const target = over.entry;
         if (items.some((e) => e.id === target.id)) return;
+        acceptedDrop.current = true;
         const targetGroup = target.group_id ? groups.find((g) => g.id === target.group_id) : undefined;
         if (targetGroup) {
           const toMove = items.filter((e) => e.group_id !== targetGroup.id);
@@ -156,8 +214,6 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
     [activeId, namingGroupId],
   );
 
-  const active = activeId ? byId.get(activeId) : undefined;
-  const activeGroup = activeId?.startsWith("drag-group:") ? groups.find((group) => group.id === activeId.slice("drag-group:".length)) : undefined;
   const count = activeId ? moving(activeId).length : 0;
 
   return (
@@ -173,9 +229,8 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
         onDragCancel={() => { setActiveId(null); lastDragEnd.current = Date.now(); }}
       >
         {children}
-        <DragOverlay dropAnimation={null}>
-          {active && <DragPreview entry={active} count={count} />}
-          {activeGroup && <div className="flex w-56 -rotate-2 items-center gap-2 rounded-2xl border bg-card p-3 text-sm font-medium shadow-float"><Layers className="size-4 shrink-0 text-primary" /><span className="truncate">{activeGroup.title}</span></div>}
+        <DragOverlay dropAnimation={dropAnimation} className="pointer-events-none">
+          {activeId && snapshot && <DraggedCard snapshot={snapshot} count={count} />}
         </DragOverlay>
       </DndContext>
     </InboxDndContext.Provider>
@@ -222,29 +277,4 @@ export function useGroupDnd(group: EntryGroup, disabled = false) {
     isDragging: drag.isDragging,
     isOver: drop.isOver && !drag.isDragging && !!ctx?.activeId,
   };
-}
-
-function DragPreview({ entry, count }: { entry: Entry; count: number }) {
-  const image = entry.attachments.find((a) => a.kind === "image");
-  const text = entry.title || entry.link_preview?.title || entry.body?.split("\n")[0] || entry.attachments[0]?.file_name || entry.url || "Entry";
-  const Icon = entry.url ? Link2 : entry.kind === "audio" ? Mic : entry.kind === "file" ? FileText : StickyNote;
-  return (
-    <div className="relative flex w-60 -rotate-2 items-center gap-2.5 rounded-2xl border bg-card p-2.5 shadow-float">
-      <span className="relative size-11 shrink-0 overflow-hidden rounded-xl bg-muted">
-        {image ? (
-          <AttachmentImage att={image} className="size-full" />
-        ) : (
-          <span className="grid size-full place-items-center text-muted-foreground">
-            <Icon className="size-4" />
-          </span>
-        )}
-      </span>
-      <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium">{text}</span>
-      {count > 1 && (
-        <span className="absolute -top-2 -right-2 grid size-6 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow">
-          {count}
-        </span>
-      )}
-    </div>
-  );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   CalendarDays,
@@ -230,11 +230,14 @@ export function BottomNav({ hasComposer = false }: { hasComposer?: boolean }) {
               href={item.href}
               aria-current={isActive(pathname, item.href) ? "page" : undefined}
               className={cn(
-                "flex flex-col items-center gap-1 py-1 text-[10.5px] font-medium transition-colors",
-                isActive(pathname, item.href) ? "text-foreground" : "text-muted-foreground",
+                "group/tab relative flex min-h-14 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-2xl px-1 text-xs font-medium transition-colors active:bg-accent",
+                isActive(pathname, item.href) ? "text-primary" : "text-muted-foreground",
               )}
             >
-              <item.icon className="size-[22px]" strokeWidth={isActive(pathname, item.href) ? 2.2 : 1.8} />
+              <span className={cn("relative grid h-7 w-11 place-items-center rounded-full transition-colors", isActive(pathname, item.href) && "bg-primary-soft")}>
+                <item.icon className="size-[21px] transition-transform group-active/tab:scale-90" strokeWidth={isActive(pathname, item.href) ? 2.2 : 1.8} />
+                <TabPending />
+              </span>
               {item.label}
             </Link>
           ),
@@ -242,6 +245,11 @@ export function BottomNav({ hasComposer = false }: { hasComposer?: boolean }) {
       </div>
     </nav>
   );
+}
+
+function TabPending() {
+  const { pending } = useLinkStatus();
+  return pending ? <span aria-label="Loading" className="absolute right-0.5 top-0.5 size-1.5 animate-pulse rounded-full bg-primary" /> : null;
 }
 
 export function PageHeader({

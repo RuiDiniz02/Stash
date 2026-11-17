@@ -30,7 +30,7 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 | **Search** | Postgres full‑text + partial matching across titles, notes, descriptions, URLs, link titles, tags, collection names and file names, via the `search_entries` RPC. Filters: type, date range, favorites, archived, collection, tag. |
 | **Media library** | Masonry gallery of every photo and video, sort and filter, full‑screen viewer with swipe/arrow keys, video playback, download, “open entry” and “open source link”. |
 | **Calendar & reminders** | Month, week and agenda views. Create tasks/reminders standalone or linked to entries, with all‑day and repeats (daily/weekly/monthly/yearly; future repeats are projected in the calendar). Complete, reopen, snooze, edit, delete. Overdue section. Filters: open/completed, linked/standalone. |
-| **Notifications** | In‑app toasts plus system notifications (with permission) while Stash is open, including in a background tab. Missed reminders are summarized the next time you open Stash. |
+| **Notifications** | In-app reminders and optional Web Push for background delivery on registered devices. On iPhone and iPad, open Stash from the Home Screen and enable reminders there. Missed reminders are summarized the next time you open Stash. |
 | **Sync** | All data lives in Supabase. Realtime Postgres Changes refresh other open devices within about a second. |
 | **Offline** | A service worker caches the app shell and static assets and shows an offline page. Text and link captures made offline are queued and synced automatically. |
 | **Settings** | Light/dark/auto theme, accent colour (synced across devices), notification permission, install prompt, storage usage with largest files, JSON export with 7‑day file links, password change, sign‑out, full account deletion. |
@@ -41,7 +41,6 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 
 | Feature | What's missing | Where to plug it in |
 | --- | --- | --- |
-| **Reminders while the app is closed** | Web Push: VAPID keys, a `push_subscriptions` table, and a scheduled sender (a Supabase Edge Function plus `pg_cron` running every minute). | `public/sw.js` already handles `push` and `notificationclick`. |
 | **Instagram / Facebook / X previews** | These platforms put content behind a login wall. Rich previews need Meta's oEmbed API (app review and access token) or a paid unfurling service. | `src/lib/link-preview.ts`: add an endpoint to the `endpoints` map. |
 | **Server‑side thumbnails** | Images are downsized in the browser before upload (max 3200px), but no thumbnails are generated. Supabase Image Transformations (Pro plan) or an Edge Function could add them. | `AttachmentImage` in `src/components/entries/media.tsx` |
 | **Video poster frames** | Videos show their first frame through `preload="metadata"`. Real poster images would need server‑side processing. | Same as above |
@@ -140,6 +139,15 @@ npm run build
 3. Deploy, then add `https://<your-domain>/auth/callback` to Supabase redirect URLs and set the Site URL.
 
 Any Node 22+ host works (`npm run build && npm start`). The app needs HTTPS in production for the service worker, the microphone, notifications and the share target.
+
+### Web Push for reminders
+
+1. Apply the reminder Web Push migration to the app's Supabase project.
+2. Deploy `reminder-push` as a Supabase Edge Function. Its configuration disables gateway JWT verification because the function authenticates the scheduled job against a random token stored in Vault.
+3. Set the Supabase API origin in `supabase/setup/reminder-push.sql` and run it in the project's SQL editor. It creates the scheduled job and initializes the VAPID keys. The private key stays in Vault.
+4. On each supported device, open **Settings → Notifications** and select **Enable**. Existing browser permission also requires this step to register the device. Schedule a reminder for a few minutes later and close Stash to check delivery.
+
+The sender checks for due reminders once per minute. The notification opens the Calendar and displays a generic message on the lock screen.
 
 ---
 

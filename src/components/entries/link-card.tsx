@@ -64,11 +64,13 @@ export function LinkCard({
   preview,
   compact,
   className,
+  interactive = true,
 }: {
   url: string;
   preview: LinkPreview | null;
   compact?: boolean;
   className?: string;
+  interactive?: boolean;
 }) {
   const provider = preview?.provider ?? detectProvider(url);
   const [imgOk, setImgOk] = useState(true);
@@ -76,13 +78,11 @@ export function LinkCard({
   const title = preview?.title || (provider !== "web" ? `${PROVIDER_LABEL[provider]} post` : hostname(url));
   const isVideo = ["youtube", "vimeo", "tiktok"].includes(provider) || /\/reel|\/reels\//.test(url);
   const loading = !preview;
+  const Card = interactive ? "a" : "div";
 
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
+    <Card
+      {...(interactive ? { href: url, target: "_blank", rel: "noopener noreferrer", onClick: (e: React.MouseEvent) => e.stopPropagation() } : {})}
       className={cn(
         "group/link flex overflow-hidden rounded-xl border bg-card transition-colors hover:bg-accent/50",
         compact || !image ? "flex-row items-stretch" : "flex-col",
@@ -124,7 +124,7 @@ export function LinkCard({
         </p>
         {!compact && preview?.description && <p className="line-clamp-2 text-xs text-muted-foreground">{preview.description}</p>}
         {preview?.failed && provider !== "web" && (
-          <p className="text-[11px] text-muted-foreground">Preview not available for this {PROVIDER_LABEL[provider]} link. Tap to open.</p>
+          <p className="text-[11px] text-muted-foreground">Preview not available for this {PROVIDER_LABEL[provider]} link.{interactive && " Tap to open."}</p>
         )}
       </div>
       {!image && (
@@ -132,6 +132,6 @@ export function LinkCard({
           <ExternalLink className="size-4" />
         </span>
       )}
-    </a>
+    </Card>
   );
 }

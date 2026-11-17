@@ -211,7 +211,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-dvh w-full min-w-0" data-composer-page={hasComposer || pathname === "/collections" || undefined} data-sidebar-collapsed={collapsed || undefined}>
         <Sidebar collapsed={collapsed} onToggle={toggleSidebar} />
         <main id="main" className="min-w-0 flex-1 pb-28 md:pb-10" style={hasComposer ? { paddingBottom: "calc(var(--capture-height, 90px) + 5rem + env(safe-area-inset-bottom))" } : undefined}>
-          {children}
+          <div key={pathname} className="mobile-route-content">{children}</div>
         </main>
       </div>
 

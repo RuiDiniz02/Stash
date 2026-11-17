@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
-import { Bell, Download, HardDrive, Keyboard, LogOut, Monitor, Moon, Smartphone, Sun, Trash2, TriangleAlert } from "lucide-react";
+import { Bell, Download, HardDrive, Keyboard, LogOut, Monitor, Moon, Smartphone, Sun, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { useStorageUsage } from "@/lib/data/media";
 import { deleteAttachment } from "@/lib/data/entries";
 import { deleteAccount, exportData } from "@/lib/data/account";
 import { invalidateData } from "@/lib/data/keys";
+import { disableReminderPush, enableReminderPush, getReminderPushKey, registeredReminderPush, supportsReminderPush } from "@/lib/data/reminder-push";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/user-context";
 import { ACCENTS, type Accent } from "@/lib/types";
@@ -123,57 +124,82 @@ function Appearance() {
 
 function Notifications() {
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
-  const [ios, setIos] = useState(false);
-  const [standalone, setStandalone] = useState(false);
+  const [iosNeedsInstall, setIosNeedsInstall] = useState(false);
+  const [key, setKey] = useState<string>();
+  const [registered, setRegistered] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setPermission(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
-    setIos(isIOS());
-    setStandalone(isStandalone());
+    let active = true;
+    const refresh = () => {
+      setPermission(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+      setIosNeedsInstall(isIOS() && !isStandalone());
+      if (!supportsReminderPush()) { setKey(undefined); setRegistered(false); setReady(true); return; }
+      void Promise.all([getReminderPushKey(), registeredReminderPush()]).then(([publicKey, isRegistered]) => {
+        if (active) { setKey(publicKey); setRegistered(isRegistered); }
+      }).catch(() => {
+        if (active) { setKey(undefined); setRegistered(false); }
+      }).finally(() => {
+        if (active) setReady(true);
+      });
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); };
   }, []);
 
-  async function enable() {
-    if (typeof Notification === "undefined") return;
-    const result = await Notification.requestPermission();
-    setPermission(result);
-    if (result === "granted") {
-      const reg = await navigator.serviceWorker?.getRegistration();
-      const opts = { body: "Reminders will appear like this.", icon: "/icons/192" };
-      if (reg) await reg.showNotification("Notifications are on", opts);
-      else new Notification("Notifications are on", opts);
+  async function toggle() {
+    if (typeof Notification === "undefined" || busy) return;
+    setBusy(true);
+    try {
+      if (registered && permission === "granted") {
+        await disableReminderPush();
+        setRegistered(false);
+        return;
+      }
+      const result = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      setPermission(result);
+      if (result !== "granted") return;
+      if (key) {
+        await enableReminderPush(key);
+        setRegistered(true);
+        toast.success("Background reminders enabled on this device");
+      } else {
+        const registration = await navigator.serviceWorker?.getRegistration();
+        const options = { body: "Reminders are available while Stash is open.", icon: "/icons/192" };
+        if (registration?.active) await registration.showNotification("Notifications enabled", options);
+        else if (!isIOS()) new Notification("Notifications enabled", options);
+      }
+    } catch (error) {
+      toast.error(errorMessage(error, "Couldn't change notifications"));
+    } finally {
+      setBusy(false);
     }
   }
 
+  const enabled = permission === "granted" && registered;
+  const hint = iosNeedsInstall
+    ? "On iPhone or iPad, add Stash to the Home Screen and open it from there."
+    : permission === "denied"
+      ? "Blocked in your device settings."
+      : permission === "unsupported"
+        ? "This browser doesn't support system notifications."
+        : enabled
+          ? "This device can receive reminders while Stash is closed."
+          : permission === "granted"
+            ? key ? "Browser permission is on. Enable background reminders for this device." : "System reminders are available while Stash is open."
+            : key ? "Enable reminders for this device, even when Stash is closed." : "Get notifications while Stash is open.";
+
   return (
-    <Section title="Notifications" description="Reminders alert you in the app and, with permission, as system notifications.">
-      <Row
-        label="Browser notifications"
-        hint={
-          permission === "granted"
-            ? "Enabled on this device."
-            : permission === "denied"
-              ? "Blocked. Allow notifications for this site in your browser settings."
-              : permission === "unsupported"
-                ? ios && !standalone
-                  ? "On iPhone and iPad, add Stash to your Home Screen first (iOS 16.4+), then enable them here."
-                  : "This browser doesn't support notifications."
-                : "Not enabled on this device yet."
-        }
-      >
-        {permission === "default" && (
-          <Button size="sm" onClick={() => void enable()}>
-            <Bell /> Enable
+    <Section title="Notifications" description="Choose how Stash reminds you on this device.">
+      <Row label="Reminders" hint={hint}>
+        {!iosNeedsInstall && permission !== "denied" && permission !== "unsupported" && (permission === "default" || key || enabled) && (
+          <Button size="sm" variant={enabled ? "outline" : "default"} onClick={() => void toggle()} disabled={busy || !ready}>
+            {busy ? <Spinner /> : <Bell />} {enabled ? "Turn off background alerts" : "Enable"}
           </Button>
         )}
       </Row>
-      <div className="flex gap-2.5 p-4 text-[13px] text-muted-foreground">
-        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-        <p>
-          Notifications fire while Stash is open, even in a background tab. When the app is fully closed, browsers
-          (especially iOS) won&apos;t wake it up. Reminders you missed are shown as soon as you open Stash. Alerts with
-          the app closed need Web Push, which is planned for a later version.
-        </p>
-      </div>
     </Section>
   );
 }
@@ -300,6 +326,7 @@ function DataAndAccount() {
   const [deleting, setDeleting] = useState(false);
 
   async function signOut() {
+    await disableReminderPush().catch(() => undefined);
     await createClient().auth.signOut();
     navigator.serviceWorker?.controller?.postMessage("clear-cache");
     qc.clear();

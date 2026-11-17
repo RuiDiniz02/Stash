@@ -71,7 +71,7 @@ export function AttachmentVideoThumb({ att, className, onClick }: { att: Attachm
           muted
           playsInline
           preload="metadata"
-          className="size-full object-cover"
+          className="pointer-events-none size-full object-cover"
           aria-label={att.file_name ?? "Video"}
         />
       )}
@@ -153,7 +153,7 @@ export function MediaGrid({ items, onOpen, className }: { items: Attachment[]; o
     >
       {shown.map((att, i) => {
         const tile = cn(
-          "cursor-zoom-in",
+          onOpen && "cursor-zoom-in",
           !single && "aspect-square",
           single && "size-full",
           shown.length === 3 && i === 0 && "row-span-2 aspect-auto",

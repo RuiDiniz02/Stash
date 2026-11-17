@@ -1,6 +1,6 @@
 /* Stash service worker: offline shell, static caching, Web Share Target, notifications. */
 // Bump the cache version whenever a release changes the app shell.
-const VERSION = "stash-v6";
+const VERSION = "stash-v7";
 // On slow mobile networks, fall back to the cached page after this long instead of waiting.
 const NAVIGATION_TIMEOUT_MS = 3000;
 const STATIC_CACHE = `${VERSION}-static`;
@@ -119,7 +119,7 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-// Ready for Web Push (server-side sender not included yet — see README).
+// Web Push wakes the service worker even when no Stash tab is open.
 self.addEventListener("push", (event) => {
   let data = {};
   try {
@@ -140,16 +140,19 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  let target = new URL("/calendar", self.location.origin);
+  try {
+    const requested = new URL(event.notification.data?.url ?? "/calendar", self.location.origin);
+    if (requested.origin === target.origin) target = requested;
+  } catch { /* Use the calendar when the payload has no valid destination. */ }
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
         if (new URL(client.url).origin === self.location.origin && "focus" in client) {
-          client.navigate(target);
-          return client.focus();
+          return client.navigate(target.href).then((window) => (window ?? client).focus());
         }
       }
-      return self.clients.openWindow(target);
+      return self.clients.openWindow(target.href);
     }),
   );
 });

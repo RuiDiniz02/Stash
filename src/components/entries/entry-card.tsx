@@ -1,7 +1,6 @@
 "use client";
 
 import { memo, useState } from "react";
-import dynamic from "next/dynamic";
 import { format, isPast } from "date-fns";
 import { Bell, Check, CloudOff, Folder, Hash, Layers, Minus, Pin, Repeat, Star } from "lucide-react";
 import { useCollections } from "@/lib/data/collections";
@@ -17,8 +16,6 @@ import { EntryActions } from "./entry-actions";
 import { useSelection } from "./selection";
 import { useEntryDnd, useInboxDnd } from "./dnd";
 import { useContextPress } from "@/hooks/use-context-press";
-
-const Lightbox = dynamic(() => import("@/components/media/lightbox").then((m) => m.Lightbox), { ssr: false });
 
 function nextReminder(entry: Entry) {
   return entry.reminders.find((r) => !r.completed_at) ?? null;
@@ -48,7 +45,6 @@ export const EntryCard = memo(function EntryCard({
   const dnd = useInboxDnd();
   const editable = entry.user_id === user.id;
   const drag = useEntryDnd(entry, noDrag || !editable);
-  const [lightbox, setLightbox] = useState<number | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const commands = useEntryCommands();
   const press = useContextPress(() => selection?.start(entry.id), !drag.enabled && editable && !entry.pending && !!selection && !selection.active);
@@ -73,6 +69,7 @@ export const EntryCard = memo(function EntryCard({
   return (
     <article
       ref={drag.setNodeRef}
+      data-drag-card
       {...drag.dragProps}
       {...press.handlers}
       role="button"
@@ -101,8 +98,8 @@ export const EntryCard = memo(function EntryCard({
         entry.pending && "opacity-70",
         selected && "ring-2 ring-primary",
         selecting && "pl-11",
-        drag.isDragging && "opacity-40",
-        drag.isOver && "scale-[0.97] ring-2 ring-primary shadow-float",
+        drag.isDragging && "opacity-25",
+        drag.isOver && "scale-[0.985] ring-2 ring-primary shadow-float",
       )}
     >
       {drag.isOver && (
@@ -142,7 +139,7 @@ export const EntryCard = memo(function EntryCard({
         </div>
       )}
 
-      {visual.length > 0 && <MediaGrid items={visual} onOpen={selecting ? undefined : setLightbox} className={cn(!isGrid && "max-w-md")} />}
+      {visual.length > 0 && <MediaGrid items={visual} className={cn("pointer-events-none", !isGrid && "max-w-md")} />}
 
       {entry.body && (
         <p
@@ -156,16 +153,16 @@ export const EntryCard = memo(function EntryCard({
         </p>
       )}
 
-      {entry.url && <LinkCard url={entry.url} preview={entry.link_preview} compact={!isGrid && visual.length > 0} className={cn(!isGrid && "max-w-md")} />}
+      {entry.url && <LinkCard url={entry.url} preview={entry.link_preview} interactive={false} compact={!isGrid && visual.length > 0} className={cn("pointer-events-none", !isGrid && "max-w-md")} />}
 
       {entry.description && <p className="line-clamp-3 text-sm text-muted-foreground">{entry.description}</p>}
 
-      {audio.map((a) => (
-        <AttachmentAudio key={a.id} att={a} compact />
-      ))}
-      {files.slice(0, 3).map((a) => (
-        <AttachmentFile key={a.id} att={a} />
-      ))}
+      {(audio.length > 0 || files.length > 0) && (
+        <div inert={selecting} className={cn("contents", selecting && "pointer-events-none")}>
+          {audio.map((a) => <AttachmentAudio key={a.id} att={a} compact />)}
+          {files.slice(0, 3).map((a) => <AttachmentFile key={a.id} att={a} />)}
+        </div>
+      )}
       {files.length > 3 && <p className="text-xs text-muted-foreground">+{files.length - 3} more files</p>}
 
       <footer className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -225,17 +222,6 @@ export const EntryCard = memo(function EntryCard({
         </div>
       )}
 
-      {visual.length > 0 && lightbox !== null && (
-        // React events bubble through portals; keep lightbox clicks from opening the entry.
-        <div className="contents" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-          <Lightbox
-            items={visual.map((a) => ({ ...a, sourceUrl: entry.url, caption: entry.title }))}
-            index={lightbox}
-            onIndexChange={setLightbox}
-            onClose={() => setLightbox(null)}
-          />
-        </div>
-      )}
     </article>
   );
 });

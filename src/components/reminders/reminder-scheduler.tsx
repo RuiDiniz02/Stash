@@ -35,6 +35,7 @@ async function showSystemNotification(r: ReminderWithEntry) {
   try {
     const reg = await navigator.serviceWorker?.getRegistration();
     if (reg) {
+      if (reg.pushManager && await reg.pushManager.getSubscription()) return;
       await reg.showNotification(r.title, { body, tag: `${r.id}:${r.due_at}`, icon: "/icons/192", badge: "/icons/192", data });
       return;
     }
@@ -49,8 +50,7 @@ async function showSystemNotification(r: ReminderWithEntry) {
 }
 
 /**
- * Fires in-app toasts and system notifications for due reminders while Stash is open
- * (foreground or background tab). Closed-app delivery needs Web Push — see README.
+ * Shows due reminders in-app. A subscribed device gets system alerts through Web Push.
  */
 export function ReminderScheduler() {
   const user = useUser();
@@ -71,7 +71,7 @@ export function ReminderScheduler() {
       if (seen[key]) return;
       seen[key] = Date.now();
       saveSeen(seen);
-      void showSystemNotification(r);
+      void showSystemNotification(r).catch(() => undefined);
       toast(r.title, {
         description: r.entry?.title ?? r.notes ?? undefined,
         duration: 15_000,

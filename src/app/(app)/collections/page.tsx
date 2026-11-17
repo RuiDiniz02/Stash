@@ -43,24 +43,13 @@ function Collections() {
   useEffect(() => {
     if (!selectionActive) return;
 
-    function leaveSelection(event: PointerEvent) {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (target.closest("[data-collection-selection-interactive], [role=dialog], [data-radix-popper-content-wrapper]")) return;
-      setSelected(null);
-    }
-
     function leaveSelectionWithKeyboard(event: KeyboardEvent) {
       if (event.key !== "Escape" || document.querySelector("[role=dialog]")) return;
       setSelected(null);
     }
 
-    document.addEventListener("pointerdown", leaveSelection);
     document.addEventListener("keydown", leaveSelectionWithKeyboard);
-    return () => {
-      document.removeEventListener("pointerdown", leaveSelection);
-      document.removeEventListener("keydown", leaveSelectionWithKeyboard);
-    };
+    return () => document.removeEventListener("keydown", leaveSelectionWithKeyboard);
   }, [selectionActive]);
 
   useEffect(() => {
@@ -136,7 +125,7 @@ function Collections() {
         subtitle={collections ? `${collections.length} collection${collections.length === 1 ? "" : "s"}` : undefined}
         actions={
           selected ? (
-            <Button data-collection-selection-interactive size="sm" variant="ghost" disabled={remove.isPending} onClick={() => setSelected(null)}>Done</Button>
+            <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => setSelected(null)}>Done</Button>
           ) : (
             <>
               {owned.length > 0 && <Button size="icon" variant="ghost" aria-label="Select collections" onClick={() => setSelected([])}><CheckSquare /></Button>}
@@ -147,7 +136,7 @@ function Collections() {
       />
       <div className="mx-auto max-w-5xl px-4 pt-4 md:px-8">
         {selected && (
-          <div data-collection-selection-interactive className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="sticky top-14 z-20 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-background/95 px-3 py-2 backdrop-blur">
             <span className="text-sm text-muted-foreground" aria-live="polite">{selectedIds.length} selected</span>
             <Button size="sm" variant="destructive" disabled={!selectedIds.length || remove.isPending} onClick={() => void deleteSelected()}>
               <Trash2 /> Delete selected
@@ -184,7 +173,6 @@ function Collections() {
             {collections.map((c) => (
               <li
                 key={c.id}
-                data-collection-selection-interactive={selected ? "" : undefined}
                 draggable={!selected && c.access_role === "owner"}
                 onDragStart={(e) => {
                   setDragId(c.id);
