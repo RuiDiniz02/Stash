@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { instagramPost, instagramThumbnail } from "../src/lib/instagram.ts";
 import { safeInternalPath } from "../src/lib/internal-path.ts";
 import { isPublicAddress, requestPublicUrl } from "../src/lib/public-http.ts";
 
@@ -19,4 +20,18 @@ test("link previews reject private, reserved and IPv4-mapped addresses", async (
   for (const url of ["http://2130706433/", "http://[::ffff:127.0.0.1]/", "https://example.com:8080/", "https://user@example.com/"]) {
     await assert.rejects(requestPublicUrl(new URL(url), {}, AbortSignal.timeout(1000)));
   }
+});
+
+test("Instagram embeds use a canonical HTTPS origin and preserve short share links as links", () => {
+  assert.deepEqual(instagramPost("https://www.instagram.com/creator/reels/Ab_C-123/?igsh=tracking"), {
+    sourceUrl: "https://www.instagram.com/reel/Ab_C-123/",
+    embedUrl: "https://www.instagram.com/reel/Ab_C-123/embed/",
+    video: true,
+  });
+  assert.equal(instagramPost("https://www.instagram.com/share/reel/AbC123/").embedUrl, null);
+  for (const url of ["https://instagram.com.example.org/reel/AbC123", "https://instagram.com:9000/reel/AbC123", "https://user@instagram.com/reel/AbC123", "https://instagram.com/reel/%2Fexample", "http://instagram.com/reel/AbC123"]) {
+    assert.equal(instagramPost(url), null, url);
+  }
+  assert.equal(instagramThumbnail("https://scontent.cdninstagram.com/post.jpg"), "https://scontent.cdninstagram.com/post.jpg");
+  assert.equal(instagramThumbnail("https://cdninstagram.com.example.org/post.jpg"), null);
 });

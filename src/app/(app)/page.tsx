@@ -82,7 +82,7 @@ function Inbox() {
           <p className="py-6 text-center text-[11px] text-muted-foreground/60 tabular-nums md:hidden">Stash {VERSION_LABEL}</p>
         </div>
       </div>
-      {!selection.active && <QuickComposer docked collections={collections} />}
+      {!selection.active && <QuickComposer collections={collections} />}
     </>
   );
 }

@@ -6,18 +6,17 @@ import { useRouter } from "next/navigation";
 import { ChevronLeft, Ellipsis, FolderOpen, Pencil, Share2, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shell/nav";
-import { QuickComposer } from "@/components/capture/quick-composer";
 import { EntriesView, LayoutToggle, useLayoutPref } from "@/components/entries/entries-view";
 import { CollectionDialog } from "@/components/collections/collection-dialog";
 import { CollectionIcon } from "@/components/collections/collection-icon";
 import { ShareCollectionDialog } from "@/components/collections/share-collection-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/menu";
-import { EmptyState } from "@/components/ui/misc";
+import { EmptyState, ErrorState } from "@/components/ui/misc";
 import { confirm } from "@/components/ui/confirm";
-import { canEditCollection, useCollectionMutations, useCollections } from "@/lib/data/collections";
+import { useCollectionMutations, useCollections } from "@/lib/data/collections";
 import { useUser } from "@/lib/user-context";
 import { errorMessage } from "@/lib/utils";
-import { SelectionProvider, useSelection } from "@/components/entries/selection";
+import { SelectionProvider } from "@/components/entries/selection";
 
 export default function CollectionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -25,23 +24,24 @@ export default function CollectionPage({ params }: { params: Promise<{ id: strin
 }
 
 function CollectionContent({ id }: { id: string }) {
-  const selection = useSelection();
   const user = useUser();
   const router = useRouter();
-  const { data: collections, isLoading } = useCollections();
+  const { data: collections, isLoading, error, refetch } = useCollections();
   const { remove } = useCollectionMutations(user.id);
   const [layout, setLayout] = useLayoutPref("collection");
   const [editing, setEditing] = useState(false);
   const [sharing, setSharing] = useState(false);
   const collection = collections?.find((c) => c.id === id);
 
+  if (!collection && error) return <ErrorState error={error} onRetry={() => refetch()} />;
+
   if (!isLoading && !collection) {
     return (
       <EmptyState
         icon={FolderOpen}
         title="Collection not found"
-        description="It may have been deleted on another device."
-        action={<Link href="/collections" className="text-sm font-medium text-primary">Back to collections</Link>}
+        description="Ideas you saved are still in your Inbox."
+        action={<Link href="/" className="text-sm font-medium text-primary">Open Inbox</Link>}
       />
     );
   }
@@ -89,7 +89,7 @@ function CollectionContent({ id }: { id: string }) {
                         onSelect={async () => {
                           const ok = await confirm({
                             title: `Delete "${collection.name}"?`,
-                            description: "Entries are kept — they just won't belong to this collection.",
+                            description: "Ideas you saved will stay in your Inbox.",
                             confirmLabel: "Delete collection",
                             destructive: true,
                           });
@@ -116,7 +116,6 @@ function CollectionContent({ id }: { id: string }) {
           <EntriesView filter={{ collectionId: id }} layout={layout} />
         </div>
       </div>
-      {!selection?.active && canEditCollection(collection) && <QuickComposer key={id} collectionId={id} docked />}
       <CollectionDialog open={editing} onOpenChange={setEditing} collection={collection} />
       <ShareCollectionDialog
         collection={collection ?? null}

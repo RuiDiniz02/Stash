@@ -1,6 +1,7 @@
 import "server-only";
 import type { IncomingMessage } from "node:http";
 import { requestPublicUrl } from "./public-http";
+import { instagramPost } from "./instagram";
 import type { LinkPreview, Provider } from "@/lib/types";
 
 const MAX_BYTES = 768 * 1024;
@@ -164,6 +165,8 @@ export async function getLinkPreview(raw: string): Promise<LinkPreview> {
 
   try {
     const { res, url: finalUrl, ok } = await safeFetch(raw, "text/html,application/xhtml+xml");
+    const instagram = provider === "instagram" ? instagramPost(finalUrl.href) : null;
+    if (instagram?.embedUrl) base.instagram_url = instagram.sourceUrl;
     const type = res.headers["content-type"] ?? "";
     if (!ok || !type.includes("html")) res.destroy();
     if (!ok) return { ...base, failed: true };

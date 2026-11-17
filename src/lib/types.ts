@@ -15,6 +15,7 @@ export interface LinkPreview {
   provider?: Provider | null;
   /** Provider-specific id that can be embedded (only YouTube/Vimeo, which allow it). */
   embed_id?: string | null;
+  instagram_url?: string;
   fetched_at?: string;
   failed?: boolean;
 }

@@ -71,7 +71,7 @@ export function EntriesView({
   if (query.error) return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
 
   const empty = filter.collectionId
-    ? { icon: FolderOpen, title: "Nothing here yet", description: "Use the input below to save into this collection, or add existing entries from their actions menu." }
+    ? { icon: FolderOpen, title: "Nothing here yet", description: "Choose this collection when saving in the Inbox, or add an existing idea from its actions menu." }
     : filter.tag
       ? { icon: Hash, title: "No entries with this tag", description: "Tags you add to entries show up here." }
       : (EMPTY[filter.view ?? "inbox"] ?? EMPTY.inbox);

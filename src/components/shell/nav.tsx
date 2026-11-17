@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import Link, { useLinkStatus } from "next/link";
+import { startTransition, useOptimistic, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   CalendarDays,
@@ -22,7 +22,6 @@ import { useTags } from "@/lib/data/tags";
 import { useUser } from "@/lib/user-context";
 import { cn, isMac } from "@/lib/utils";
 import { VERSION_LABEL } from "@/lib/version";
-import { useStash } from "./stash-context";
 import { CollectionIcon } from "@/components/collections/collection-icon";
 
 const NAV = [
@@ -39,12 +38,10 @@ function isActive(pathname: string, href: string) {
 
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { openCapture } = useStash();
   const user = useUser();
   const { data: collections } = useCollections();
   const { data: tags } = useTags();
   const mod = typeof window !== "undefined" && isMac() ? "⌘" : "Ctrl";
-  const hasComposer = pathname === "/" || /^\/collections\/[^/]+$/.test(pathname);
 
   return (
     <aside
@@ -69,26 +66,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           </button>
         )}
       </div>
-
-      {!hasComposer && <div className="px-3 pb-2">
-        <button
-          onClick={() => openCapture()}
-          className={cn(
-            "flex h-9 w-full items-center gap-2 rounded-lg bg-primary text-sm font-medium text-primary-foreground shadow-soft transition hover:opacity-90 active:scale-[0.98]",
-            collapsed ? "justify-center" : "px-3",
-          )}
-          aria-label="New capture"
-          title="New capture (N)"
-        >
-          <Plus className="size-4" />
-          {!collapsed && (
-            <>
-              <span className="flex-1 text-left">New capture</span>
-              <Kbd className="border-white/20 bg-white/15 text-primary-foreground">N</Kbd>
-            </>
-          )}
-        </button>
-      </div>}
 
       <nav className="flex flex-col gap-0.5 px-3 py-1">
         {NAV.map(({ href, label, icon: Icon }) => {
@@ -198,58 +175,42 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 const MOBILE_NAV = [
   { href: "/", label: "Inbox", icon: Inbox },
   { href: "/collections", label: "Collections", icon: Folder },
-  null,
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/media", label: "Media", icon: Images },
 ] as const;
 
-export function BottomNav({ hasComposer = false }: { hasComposer?: boolean }) {
+export function BottomNav() {
   const pathname = usePathname();
-  const { openCapture } = useStash();
+  const router = useRouter();
+  const [visualPath, setVisualPath] = useOptimistic(pathname);
+  const activeIndex = MOBILE_NAV.findIndex(({ href }) => isActive(visualPath, href));
 
   return (
-    <nav
-      aria-label="Primary"
-      className="bottom-nav fixed inset-x-0 bottom-0 z-40 border-t bg-background/85 pb-safe backdrop-blur-xl backdrop-saturate-150 md:hidden"
-    >
-      <div className={cn("mx-auto grid h-16 max-w-md items-center px-2", hasComposer ? "grid-cols-4" : "grid-cols-5")}>
-        {MOBILE_NAV.filter((item) => !hasComposer || item !== null).map((item) =>
-          item === null ? (
-            <div key="capture" className="flex justify-center">
-              <button
-                onClick={() => openCapture()}
-                aria-label="New capture"
-                className="-mt-6 grid size-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-float ring-4 ring-background transition active:scale-90"
-              >
-                <Plus className="size-6" strokeWidth={2.4} />
-              </button>
-            </div>
-          ) : (
+    <nav aria-label="Primary" className="bottom-nav pointer-events-none fixed inset-x-0 z-40 px-3 md:hidden">
+      <div className="mobile-nav-glass pointer-events-auto relative isolate mx-auto grid max-w-md grid-cols-4 rounded-full p-1">
+          <span aria-hidden className="mobile-nav-indicator pointer-events-none absolute rounded-full" style={{ transform: `translateX(${Math.max(activeIndex, 0) * 100}%)`, opacity: activeIndex < 0 ? 0 : 1 }} />
+          {MOBILE_NAV.map(({ href, label, icon: Icon }, index) => (
             <Link
-              key={item.href}
-              href={item.href}
-              aria-current={isActive(pathname, item.href) ? "page" : undefined}
-              className={cn(
-                "group/tab relative flex min-h-14 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-2xl px-1 text-xs font-medium transition-colors active:bg-accent",
-                isActive(pathname, item.href) ? "text-primary" : "text-muted-foreground",
-              )}
+              key={href}
+              href={href}
+              onNavigate={(event) => {
+                event.preventDefault();
+                startTransition(() => {
+                  setVisualPath(href);
+                  router.push(href);
+                });
+              }}
+              aria-current={isActive(pathname, href) ? "page" : undefined}
+              data-highlighted={activeIndex === index || undefined}
+              className="mobile-nav-tab relative flex min-h-13 min-w-0 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-full px-0.5 text-[10px] leading-tight font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-ring min-[375px]:text-[11px]"
             >
-              <span className={cn("relative grid h-7 w-11 place-items-center rounded-full transition-colors", isActive(pathname, item.href) && "bg-primary-soft")}>
-                <item.icon className="size-[21px] transition-transform group-active/tab:scale-90" strokeWidth={isActive(pathname, item.href) ? 2.2 : 1.8} />
-                <TabPending />
-              </span>
-              {item.label}
+              <Icon className="size-[21px]" strokeWidth={activeIndex === index ? 2.15 : 1.7} aria-hidden />
+              {label}
             </Link>
-          ),
-        )}
+          ))}
       </div>
     </nav>
   );
-}
-
-function TabPending() {
-  const { pending } = useLinkStatus();
-  return pending ? <span aria-label="Loading" className="absolute right-0.5 top-0.5 size-1.5 animate-pulse rounded-full bg-primary" /> : null;
 }
 
 export function PageHeader({

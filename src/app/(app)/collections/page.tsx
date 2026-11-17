@@ -80,7 +80,7 @@ function Collections() {
   async function onDelete(c: Collection) {
     const ok = await confirm({
       title: `Delete "${c.name}"?`,
-      description: "Entries in this collection are kept — they just won't belong to it anymore.",
+      description: "Ideas you saved will stay in your Inbox.",
       confirmLabel: "Delete collection",
       destructive: true,
     });
@@ -104,7 +104,7 @@ function Collections() {
     if (!selectedIds.length || remove.isPending) return;
     const ok = await confirm({
       title: `Delete ${selectedIds.length} selected ${selectedIds.length === 1 ? "collection" : "collections"}?`,
-      description: "Notes are kept. If a collection is shared, its members lose access to it.",
+      description: "Ideas you saved will stay in your Inbox. Members lose access to any shared collections you delete.",
       confirmLabel: "Delete selected",
       destructive: true,
     });

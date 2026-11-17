@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Plus, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import { ReminderScheduler } from "@/components/reminders/reminder-scheduler";
 import { createClient } from "@/lib/supabase/client";
@@ -60,7 +60,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [captureUsed, setCaptureUsed] = useState(false);
   const [reminderUsed, setReminderUsed] = useState(false);
   const dragDepth = useRef(0);
-  const hasComposer = pathname === "/" || /^\/collections\/[^/]+$/.test(pathname);
+  const hasComposer = pathname === "/";
 
   useVisualViewport();
 
@@ -110,8 +110,9 @@ function Shell({ children }: { children: React.ReactNode }) {
   const actions = useMemo<StashActions>(
     () => ({
       openCapture: (prefill) => {
-        const collectionId = pathname.match(/^\/collections\/([^/]+)$/)?.[1];
-        setCapturePrefill({ ...(collectionId ? { collectionIds: [collectionId] } : {}), ...prefill });
+        if (pathname === "/share") router.replace("/");
+        else if (!hasComposer) return;
+        setCapturePrefill(prefill ?? null);
         setCaptureUsed(true);
         setCaptureOpen(true);
       },
@@ -123,16 +124,16 @@ function Shell({ children }: { children: React.ReactNode }) {
         setReminderOpen(true);
       },
     }),
-    [setParam, pathname],
+    [setParam, pathname, router, hasComposer],
   );
 
   // Manifest shortcut: /?capture=1
   useEffect(() => {
-    if (searchParams.get("capture") === "1") {
+    if (hasComposer && searchParams.get("capture") === "1") {
       actions.openCapture();
       setParam("capture", null);
     }
-  }, [searchParams, actions, setParam]);
+  }, [searchParams, actions, setParam, hasComposer]);
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -144,7 +145,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       }
       if (isEditable(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (document.querySelector("[role=dialog]")) return;
-      if (e.key === "n" || e.key === "c") {
+      if (hasComposer && (e.key === "n" || e.key === "c")) {
         e.preventDefault();
         actions.openCapture();
       } else if (e.key === "/") {
@@ -156,10 +157,11 @@ function Shell({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [actions, router, toggleSidebar]);
+  }, [actions, router, toggleSidebar, hasComposer]);
 
-  // Paste anywhere (outside inputs) to capture: screenshots, links, text.
+  // Paste into the Inbox (outside inputs) to capture: screenshots, links, text.
   useEffect(() => {
+    if (!hasComposer) return;
     const onPaste = (e: ClipboardEvent) => {
       if (isEditable(e.target) || document.querySelector("[role=dialog]")) return;
       const files = Array.from(e.clipboardData?.files ?? []);
@@ -170,10 +172,11 @@ function Shell({ children }: { children: React.ReactNode }) {
     };
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
-  }, [actions]);
+  }, [actions, hasComposer]);
 
-  // Drag & drop files anywhere.
+  // Drag & drop files into the Inbox.
   useEffect(() => {
+    if (!hasComposer) return;
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
     const onEnter = (e: DragEvent) => {
       if (!hasFiles(e) || document.querySelector("[role=dialog]")) return;
@@ -204,29 +207,20 @@ function Shell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("dragover", onOver);
       window.removeEventListener("drop", onDrop);
     };
-  }, [actions]);
+  }, [actions, hasComposer]);
 
   return (
     <StashContext.Provider value={actions}>
-      <div className="flex min-h-dvh w-full min-w-0" data-composer-page={hasComposer || pathname === "/collections" || undefined} data-sidebar-collapsed={collapsed || undefined}>
+      <div className="flex min-h-dvh w-full min-w-0" data-sidebar-collapsed={collapsed || undefined}>
         <Sidebar collapsed={collapsed} onToggle={toggleSidebar} />
-        <main id="main" className="min-w-0 flex-1 pb-28 md:pb-10" style={hasComposer ? { paddingBottom: "calc(var(--capture-height, 90px) + 5rem + env(safe-area-inset-bottom))" } : undefined}>
+        <main id="main" className="app-main min-w-0 flex-1" data-with-composer={hasComposer || undefined}>
           <div key={pathname} className="mobile-route-content">{children}</div>
         </main>
       </div>
 
-      <BottomNav hasComposer={hasComposer || pathname === "/collections"} />
+      <BottomNav />
 
-      {!hasComposer && pathname !== "/collections" && <button
-        onClick={() => actions.openCapture()}
-        aria-label="New capture"
-        title="New capture (N)"
-        className="fixed right-6 bottom-6 z-40 hidden size-14 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-float transition hover:scale-105 active:scale-95 md:grid"
-      >
-        <Plus className="size-6" strokeWidth={2.4} />
-      </button>}
-
-      {dragging && (
+      {hasComposer && dragging && (
         <div className="pointer-events-none fixed inset-0 z-[70] grid place-items-center bg-background/70 backdrop-blur-sm animate-in fade-in-0">
           <div className="flex flex-col items-center gap-3 rounded-3xl border-2 border-dashed border-primary/50 bg-card px-12 py-10 shadow-float">
             <Upload className="size-8 text-primary" />
@@ -236,7 +230,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       )}
 
       {captureUsed && (
-        <CaptureDialog open={captureOpen} onOpenChange={setCaptureOpen} prefill={capturePrefill} onOpenEntry={actions.openEntry} />
+        <CaptureDialog open={hasComposer && captureOpen} onOpenChange={setCaptureOpen} prefill={capturePrefill} onOpenEntry={actions.openEntry} />
       )}
       {entryId && <EntryDetailSheet entryId={entryId} onClose={actions.closeEntry} />}
       {reminderUsed && <ReminderDialog open={reminderOpen} onOpenChange={setReminderOpen} prefill={reminderPrefill} />}

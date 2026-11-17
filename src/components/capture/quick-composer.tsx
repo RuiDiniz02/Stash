@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp, Check, LoaderCircle, Mic, Plus, Type, Users, X } from "lucide-react";
 import { useStash } from "@/components/shell/stash-context";
 import { canEditCollection } from "@/lib/data/collections";
@@ -12,15 +12,25 @@ import { CaptureDestinations, isSharedDestination } from "./capture-destinations
 
 const toolClass = "grid size-10 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40";
 
-/** Shared capture input; drafts are isolated by account and destination. */
-export function QuickComposer({
-  collectionId, groupId, docked = false, collections,
-}: {
-  collectionId?: string;
-  groupId?: string;
-  docked?: boolean;
-  collections?: Collection[];
-}) {
+function readDraft(key: string, fallbackDestination?: string) {
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    if (typeof data?.text === "string" && typeof data.id === "string") {
+      return {
+        id: data.id as string,
+        text: data.text as string,
+        title: typeof data.title === "string" ? data.title as string : "",
+        destination: typeof data.destination === "string" ? data.destination as string : data.destination === null ? undefined : fallbackDestination,
+      };
+    }
+  } catch { /* Older drafts stored plain text. */ }
+  return { id: uuid(), text: raw, title: "", destination: fallbackDestination };
+}
+
+/** Inbox capture, including drafts left in older collection and group composers. */
+export function QuickComposer({ collections }: { collections?: Collection[] }) {
   const { openCapture, openEntry } = useStash();
   const user = useUser();
   const save = useCapture();
@@ -38,36 +48,44 @@ export function QuickComposer({
   const bodyInput = useRef<HTMLTextAreaElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const dock = useRef<HTMLDivElement>(null);
-  const draftKey = `stash-draft-v1:${user.id}:${groupId ? `group:${groupId}` : collectionId ? `collection:${collectionId}` : "inbox"}`;
-  const selectedId = collectionId ?? destination;
-  const collectionIds = selectedId ? [selectedId] : undefined;
+  const draftPrefix = `stash-draft-v1:${user.id}:`;
+  const inboxKey = `${draftPrefix}inbox`;
+  const draftKey = useRef(inboxKey);
   const destinations = collections?.filter(canEditCollection) ?? [];
   const selectedCollection = destinations.find((item) => item.id === destination);
-  const unavailable = !!(destination && collections && !selectedCollection);
-  const destinationName = selectedCollection?.name ?? (unavailable ? "Collection unavailable" : "Collection selected");
+  const selectedDestination = collections ? selectedCollection?.id : destination;
+  const collectionIds = selectedDestination ? [selectedDestination] : undefined;
+  const destinationName = selectedCollection?.name ?? (destination && collections ? "Inbox" : undefined);
   const shared = selectedCollection && isSharedDestination(selectedCollection);
 
-  useEffect(() => {
-    captureId.current = uuid();
-    setText("");
-    setTitle("");
-    setShowTitle(false);
-    setDestination(undefined);
+  const restoreDraft = useCallback(() => {
+    draftKey.current = inboxKey;
+    let draft = null;
     try {
-      const raw = localStorage.getItem(draftKey) ?? "";
-      try {
-        const draft = JSON.parse(raw);
-        if (typeof draft.text === "string" && typeof draft.id === "string") {
-          setText(draft.text);
-          setTitle(typeof draft.title === "string" ? draft.title : "");
-          if (!collectionId && !groupId && typeof draft.destination === "string") setDestination(draft.destination);
-          captureId.current = draft.id;
+      draft = readDraft(inboxKey);
+      if (!draft?.text && !draft?.title) {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (!key?.startsWith(draftPrefix)) continue;
+          const scope = key.slice(draftPrefix.length);
+          if (!scope.startsWith("collection:") && !scope.startsWith("group:")) continue;
+          const previous = readDraft(key, scope.startsWith("collection:") ? scope.slice("collection:".length) : undefined);
+          if (!previous?.text && !previous?.title) continue;
+          draftKey.current = key;
+          draft = previous;
+          break;
         }
-        else setText(raw);
-      } catch { setText(raw); }
+      }
     } catch { /* Storage may be unavailable. */ }
+    captureId.current = draft?.id ?? uuid();
+    setText(draft?.text ?? "");
+    setTitle(draft?.title ?? "");
+    setShowTitle(false);
+    setDestination(draft?.destination);
     setReady(true);
-  }, [draftKey, collectionId, groupId]);
+  }, [draftPrefix, inboxKey]);
+
+  useEffect(restoreDraft, [restoreDraft]);
 
   useEffect(() => {
     if (showTitle) titleInput.current?.focus();
@@ -80,52 +98,48 @@ export function QuickComposer({
   }, [saved]);
 
   useEffect(() => {
-    if (!docked || !dock.current) return;
+    if (!dock.current) return;
     const node = dock.current;
     const update = () => document.documentElement.style.setProperty("--capture-height", `${node.offsetHeight}px`);
     const observer = new ResizeObserver(update);
     observer.observe(node); update();
     return () => { observer.disconnect(); document.documentElement.style.removeProperty("--capture-height"); };
-  }, [docked]);
+  }, []);
 
-  function updateDraft(value: string, nextTitle: string, nextDestination = destination) {
+  function updateDraft(value: string, nextTitle: string, nextDestination = selectedDestination) {
     setText(value);
     setTitle(nextTitle);
     try {
-      if (value || nextTitle || nextDestination) localStorage.setItem(draftKey, JSON.stringify({ id: captureId.current, text: value, title: nextTitle, destination: nextDestination }));
-      else localStorage.removeItem(draftKey);
+      if (value || nextTitle || nextDestination) localStorage.setItem(draftKey.current, JSON.stringify({ id: captureId.current, text: value, title: nextTitle, destination: nextDestination || null }));
+      else localStorage.removeItem(draftKey.current);
     } catch { /* Capturing still works without persistent storage. */ }
   }
 
   const hasContent = !!(title.trim() || text.trim() || files.length);
 
   async function submit() {
-    if (!ready || submitting.current || !hasContent || unavailable) return;
+    if (!ready || submitting.current || !hasContent) return;
     submitting.current = true;
     setSaving(true);
     setSaved(false);
     try {
-      const ok = await save({ id: captureId.current, title: title.trim(), text: text.trim(), files, collectionIds, groupId }, { onOpen: openEntry });
+      const ok = await save({ id: captureId.current, title: title.trim(), text: text.trim(), files, collectionIds }, { onOpen: openEntry });
       if (ok) {
-        setText("");
-        setTitle("");
-        setShowTitle(false);
-        setDestination(undefined);
         setFiles([]);
-        try { localStorage.removeItem(draftKey); } catch { /* Storage may be unavailable. */ }
-        captureId.current = uuid();
+        try { localStorage.removeItem(draftKey.current); } catch { /* Storage may be unavailable. */ }
+        restoreDraft();
         setSaved(true);
       }
     } finally { submitting.current = false; setSaving(false); }
   }
 
   return (
-    <div ref={dock} className={docked ? "capture-dock" : "min-w-0"}>
+    <div ref={dock} className="capture-dock">
       <div className="mx-auto w-full min-w-0 max-w-2xl">
-        {(destinations.length > 0 || destination) && (
+        {destinations.length > 0 && (
           <CaptureDestinations
             collections={destinations}
-            selected={destination}
+            selected={selectedDestination}
             disabled={saving || !ready}
             onSelect={(id) => { setDestination(id); updateDraft(text, title, id ?? ""); }}
           />
@@ -171,7 +185,7 @@ export function QuickComposer({
             }}
             rows={1}
             maxLength={50000}
-            placeholder={groupId ? "Add to this idea…" : "Save a thought…"}
+            placeholder="Save a thought…"
             aria-label="Quick capture"
             className="block field-sizing-content max-h-40 min-h-10 w-full min-w-0 resize-none bg-transparent px-2.5 py-2 text-[16px] leading-6 outline-none placeholder:text-muted-foreground disabled:opacity-70"
           />
@@ -205,11 +219,11 @@ export function QuickComposer({
               className={cn(toolClass, (showTitle || title) && "bg-primary-soft text-primary")}
             ><Type className="size-[17px]" /></button>
             {!text.trim() && !files.length && (
-              <button type="button" disabled={saving || unavailable} onClick={() => openCapture({ voice: true, title, collectionIds, groupId })} aria-label="Record a voice note" title="Record a voice note" className={toolClass}><Mic className="size-[17px]" /></button>
+              <button type="button" disabled={saving || !ready} onClick={() => openCapture({ voice: true, title, collectionIds })} aria-label="Record a voice note" title="Record a voice note" className={toolClass}><Mic className="size-[17px]" /></button>
             )}
             <div className="min-w-0 flex-1 px-1 text-right">
-              {destination && (
-                <p aria-live="polite" className={cn("flex min-w-0 items-center justify-end gap-1.5 text-xs", unavailable ? "text-destructive" : "text-muted-foreground")} title={unavailable ? "Choose another destination to save" : destinationName}>
+              {destinationName && (
+                <p aria-live="polite" className="flex min-w-0 items-center justify-end gap-1.5 text-xs text-muted-foreground" title={destinationName}>
                   {shared && <Users className="size-3.5 shrink-0" aria-label="Shared collection" />}
                   <span className="truncate">{destinationName}</span>
                 </p>
@@ -217,12 +231,12 @@ export function QuickComposer({
             </div>
             <button
               type="submit"
-              disabled={saving || !ready || !hasContent || unavailable}
+              disabled={saving || !ready || !hasContent}
               aria-label={saving ? "Saving" : "Save"}
               aria-busy={saving}
               className={cn(
                 "grid size-10 shrink-0 place-items-center rounded-full transition active:scale-95",
-                saved && !hasContent ? "bg-primary-soft text-primary" : hasContent && !unavailable ? "bg-primary text-primary-foreground disabled:opacity-65" : "bg-muted text-muted-foreground disabled:opacity-60",
+                saved && !hasContent ? "bg-primary-soft text-primary" : hasContent ? "bg-primary text-primary-foreground disabled:opacity-65" : "bg-muted text-muted-foreground disabled:opacity-60",
               )}
             >
               {saving ? <LoaderCircle className="size-5 animate-spin" aria-hidden /> : saved && !hasContent

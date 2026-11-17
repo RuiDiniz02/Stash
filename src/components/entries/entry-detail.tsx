@@ -3,7 +3,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, isPast } from "date-fns";
-import { Bell, Check, Link2, Paperclip, Plus, RefreshCw, Repeat, Trash2, X } from "lucide-react";
+import { Bell, Check, Link2, Paperclip, Pencil, Plus, RefreshCw, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,8 @@ import { LinkCard, detectProvider } from "./link-card";
 import { EntryActions } from "./entry-actions";
 import { RelatedIdeas } from "./related-ideas";
 
+const noteText = "whitespace-pre-wrap wrap-anywhere text-base leading-7";
+
 export function EntryDetailSheet({ entryId, onClose }: { entryId: string | null; onClose: () => void }) {
   const { openEntry } = useStash();
   const editor = useRef<{ save: () => Promise<boolean> }>(null);
@@ -49,7 +51,7 @@ export function EntryDetailSheet({ entryId, onClose }: { entryId: string | null;
   return (
     <Dialog open={!!entryId} onOpenChange={(o) => { if (!o) void afterSaving(onClose); }}>
       <DialogContent variant="right" hideClose overlayClassName="bg-black/20 backdrop-blur-0 sm:bg-black/10" aria-describedby={undefined}>
-        {entryId && <EntryDetail entryId={entryId} editorRef={editor} onClose={() => void afterSaving(onClose)} onDiscard={onClose} onOpenRelated={(id) => void afterSaving(() => openEntry(id))} />}
+        {entryId && <EntryDetail key={entryId} entryId={entryId} editorRef={editor} onClose={() => void afterSaving(onClose)} onDiscard={onClose} onOpenRelated={(id) => void afterSaving(() => openEntry(id))} />}
       </DialogContent>
     </Dialog>
   );
@@ -59,7 +61,7 @@ function EntryDetail({
   entryId, editorRef, onClose, onDiscard, onOpenRelated,
 }: {
   entryId: string;
-  editorRef: Ref<{ save: () => Promise<boolean> }>;
+  editorRef: React.RefObject<{ save: () => Promise<boolean> } | null>;
   onClose: () => void;
   onDiscard: () => void;
   onOpenRelated: (id: string) => void;
@@ -67,24 +69,46 @@ function EntryDetail({
   const { data: entry, isLoading, error, refetch } = useEntry(entryId);
   const user = useUser();
   const editable = entry?.user_id === user.id;
+  const [mobileEditing, setMobileEditing] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+
+  async function finishEditing() {
+    setFinishing(true);
+    try {
+      if (await editorRef.current?.save()) setMobileEditing(false);
+    } finally {
+      setFinishing(false);
+    }
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-14 shrink-0 items-center gap-1 border-b px-3 pt-safe">
-        <button onClick={onClose} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent" aria-label="Close">
+      <div className="flex min-h-14 shrink-0 items-center gap-1 border-b px-3 pt-safe">
+        <button onClick={onClose} className="grid size-11 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-accent" aria-label="Close">
           <X className="size-5" />
         </button>
         <DialogTitle className="flex-1 truncate px-1 text-sm font-medium text-muted-foreground">
           {entry ? format(new Date(entry.created_at), "EEEE, d MMM yyyy · HH:mm") : "Entry"}
         </DialogTitle>
+        {editable && (
+          <button
+            type="button"
+            onClick={() => mobileEditing ? void finishEditing() : setMobileEditing(true)}
+            disabled={finishing}
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-primary hover:bg-primary-soft disabled:opacity-65 md:hidden"
+          >
+            {mobileEditing ? <Check className="size-4" aria-hidden /> : <Pencil className="size-4" aria-hidden />}
+            {mobileEditing ? "Done" : "Edit"}
+          </button>
+        )}
         {entry && <EntryActions entry={entry} />}
       </div>
       {entry && (
-        <p id="note-save-hint" className="shrink-0 border-b bg-muted/30 px-5 py-2.5 text-xs leading-normal text-muted-foreground">
+        <p id="note-save-hint" className={cn("shrink-0 border-b bg-muted/30 px-5 py-2.5 text-xs leading-normal text-muted-foreground", editable && !mobileEditing && "hidden md:block")}>
           {editable ? (
             <>
-              <span className="hidden [@media(pointer:fine)]:inline">Click outside the note to save automatically.</span>
-              <span className="[@media(pointer:fine)]:hidden">Tap outside the note to save automatically.</span>
+              <span className="hidden md:inline">Click outside the note to save automatically.</span>
+              <span className="md:hidden">Tap Done when you’ve finished editing.</span>
             </>
           ) : "Shared note · View only"}
         </p>
@@ -99,17 +123,18 @@ function EntryDetail({
         )}
         {error && <ErrorState error={error} onRetry={() => refetch()} />}
         {!isLoading && !error && !entry && <p className="p-8 text-center text-sm text-muted-foreground">This entry no longer exists.</p>}
-        {entry && <EntryEditor key={entry.id} entry={entry} readOnly={!editable} ref={editorRef} onDiscard={onDiscard} onOpenRelated={onOpenRelated} />}
+        {entry && <EntryEditor key={entry.id} entry={entry} readOnly={!editable} mobileEditing={mobileEditing} ref={editorRef} onDiscard={onDiscard} onOpenRelated={onOpenRelated} />}
       </div>
     </div>
   );
 }
 
 function EntryEditor({
-  entry, readOnly, ref, onDiscard, onOpenRelated,
+  entry, readOnly, mobileEditing, ref, onDiscard, onOpenRelated,
 }: {
   entry: Entry;
   readOnly: boolean;
+  mobileEditing: boolean;
   ref: Ref<{ save: () => Promise<boolean> }>;
   onDiscard: () => void;
   onOpenRelated: (id: string) => void;
@@ -151,7 +176,7 @@ function EntryEditor({
       <div className="space-y-5 p-5 pb-safe">
         <div className="space-y-2">
           {entry.title && <h2 className="text-xl font-semibold tracking-tight">{entry.title}</h2>}
-          {entry.body && <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words">{entry.body}</p>}
+          {entry.body && <p className={noteText}>{entry.body}</p>}
         </div>
         {embedId && (provider === "youtube" || provider === "vimeo") && (
           <div className="aspect-video overflow-hidden rounded-xl bg-black">
@@ -214,7 +239,7 @@ function EntryEditor({
         acceptQueuedEdits.current = false;
         const current = draft.current;
         const nextUrl = current.url.trim() ? extractUrl(current.url.trim()) : null;
-        const next = { title: current.title.trim() || null, body: current.body.trim() || null, url: nextUrl };
+        const next = { title: current.title.trim() || null, body: current.body || null, url: nextUrl };
         if (current.url.trim() && !nextUrl) {
           setSaveError("Enter a valid http(s) link or clear the link field.");
           setSaveStatus("error");
@@ -258,6 +283,10 @@ function EntryEditor({
     }
   }
 
+  function saveOnDesktopBlur() {
+    if (window.matchMedia("(min-width: 768px)").matches) void flushEdits();
+  }
+
   async function onCollections(next: string[]) {
     setCollectionIds(next);
     try {
@@ -289,11 +318,17 @@ function EntryEditor({
 
   return (
     <div className="space-y-6 p-5 pb-safe">
-      <div className="space-y-1">
+      {!mobileEditing && (title || body) && (
+        <div className="space-y-2 md:hidden">
+          {title && <h2 className="wrap-anywhere text-xl font-semibold tracking-tight">{title}</h2>}
+          {body && <p className={noteText}>{body}</p>}
+        </div>
+      )}
+      <div className={cn("space-y-1", !mobileEditing && "hidden md:block")}>
         <input
           value={title}
           onChange={(e) => edit("title", e.target.value)}
-          onBlur={() => void flushEdits()}
+          onBlur={saveOnDesktopBlur}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur(); }}
           placeholder="Untitled"
           maxLength={300}
@@ -301,16 +336,20 @@ function EntryEditor({
           aria-describedby="note-save-hint"
           className="w-full bg-transparent text-xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/50"
         />
-        <textarea
-          value={body}
-          onChange={(e) => edit("body", e.target.value)}
-          onBlur={() => void flushEdits()}
-          placeholder="Add a note…"
-          maxLength={50000}
-          aria-label="Note"
-          aria-describedby="note-save-hint"
-          className="field-sizing-content min-h-12 w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none placeholder:text-muted-foreground/50"
-        />
+        <div className={cn("grid min-h-14 min-w-0", noteText)}>
+          <div aria-hidden className="invisible col-start-1 row-start-1 min-w-0">{body}{"\n "}</div>
+          <textarea
+            value={body}
+            onChange={(e) => edit("body", e.target.value)}
+            onBlur={saveOnDesktopBlur}
+            placeholder="Add a note…"
+            maxLength={50000}
+            rows={1}
+            aria-label="Note"
+            aria-describedby="note-save-hint"
+            className="col-start-1 row-start-1 h-full min-h-0 w-full min-w-0 resize-none overflow-hidden bg-transparent outline-none placeholder:text-muted-foreground/50"
+          />
+        </div>
         <p role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
           {saveStatus === "saving" ? "Saving changes…" : saveStatus === "saved" ? (
             <><Check className="size-3.5 animate-pop text-success" aria-hidden /> Changes saved</>

@@ -17,7 +17,7 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 | Area | What works |
 | --- | --- |
 | **Auth** | Email/password sign‑up, sign‑in, email confirmation, password reset, sign‑out. Sessions refreshed in `src/proxy.ts`; every page and API route is protected. |
-| **Quick capture** | Inline “chat with yourself” composer (Enter to save) and a full capture sheet (`N`, the floating **+**, or the centre tab on mobile). Text, links, multiple photos/videos/files per entry, camera capture on phones, voice notes (MediaRecorder), optional title/description/tags/collections/reminder. Saving needs no category. |
+| **Quick capture** | Inbox composer (Enter to save on desktop) and full capture sheet (`N` in the Inbox). Text, links, multiple photos/videos/files per entry, camera capture on phones, voice notes (MediaRecorder), optional title/description/tags/collections/reminder. Saving needs no category. |
 | **Paste & drop** | Paste a screenshot, link or text anywhere (outside inputs) → opens capture. Drag files anywhere onto the window. |
 | **Inbox timeline** | Chronological feed grouped by day, list or masonry grid, pinned strip, filters (All / Pinned / Favorites / Uncategorized / Archived), infinite scroll, skeletons, empty and error states. |
 | **Entries** | Edit title, note, description, link; add/remove attachments; pin, favorite, archive, delete (files removed from Storage too); share via the Web Share API (including files where supported) or copy. Right‑side detail panel on desktop, full‑screen sheet on mobile, deep‑linkable with `?entry=<id>`. |
@@ -25,10 +25,10 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 | **Groups** (v1.1) | Select several Inbox entries (Select button, long‑press on touch, or the checkbox on hover) and group them into one idea. Groups expand/collapse in the Inbox and can be renamed, ungrouped, or have entries added/removed. Entries are never copied; a group disappears automatically when its last entry leaves it. |
 | **Drag to group** (v1.2) | Like folders on an iPhone: hold an entry (≈0.3 s on touch, or drag with the mouse) and drop it on another entry to create a group, or on a group to add it. The new group asks for a name right away; confirming the name saves it as a collection with the same name (or links an existing one). The database keeps that collection in step with the group; ungrouping keeps the collection. |
 | **Undo instead of confirmations** (v1.1) | Delete, archive, ungroup, remove from group/collection and reminder deletion apply at once with an Undo toast. Deletes are committed after the 5‑second undo window. |
-| **Collections** | Create, rename, change icon/colour, reorder (drag on desktop, or Move up/down), delete. Entries can be in several collections. One‑click “suggested collections”. Capture directly into a collection. Collections remain private unless their owner invites members; editors can add and organize entries, viewers have read-only access, and every entry keeps its original owner. |
+| **Collections** | Create, rename, change icon/colour, reorder (drag on desktop, or Move up/down), delete. Entries can be in several collections. Choose a destination in the Inbox composer. Collections remain private unless their owner invites members; editors can add and organize entries, viewers have read-only access, and every entry keeps its original owner. |
 | **Tags** | Autocomplete tag input, tag browsing in sidebar and search. |
 | **Search** | Postgres full‑text + partial matching across titles, notes, descriptions, URLs, link titles, tags, collection names and file names, via the `search_entries` RPC. Filters: type, date range, favorites, archived, collection, tag. |
-| **Media library** | Masonry gallery of every photo and video, sort and filter, full‑screen viewer with swipe/arrow keys, video playback, download, “open entry” and “open source link”. |
+| **Media library** | Masonry gallery of saved photos, videos and Instagram posts. Sort and filter, swipe or use arrow keys in the full-screen viewer, play uploaded videos, and open the original idea. Public Instagram posts can play in the viewer when embedding is allowed. Every Instagram tile links to the original post. |
 | **Calendar & reminders** | Month, week and agenda views. Create tasks/reminders standalone or linked to entries, with all‑day and repeats (daily/weekly/monthly/yearly; future repeats are projected in the calendar). Complete, reopen, snooze, edit, delete. Overdue section. Filters: open/completed, linked/standalone. |
 | **Notifications** | In-app reminders and optional Web Push for background delivery on registered devices. On iPhone and iPad, open Stash from the Home Screen and enable reminders there. Missed reminders are summarized the next time you open Stash. |
 | **Sync** | All data lives in Supabase. Realtime Postgres Changes refresh other open devices within about a second. |
@@ -41,7 +41,7 @@ A private, mobile‑first place to capture anything — notes, links, photos, vi
 
 | Feature | What's missing | Where to plug it in |
 | --- | --- | --- |
-| **Instagram / Facebook / X previews** | These platforms put content behind a login wall. Rich previews need Meta's oEmbed API (app review and access token) or a paid unfurling service. | `src/lib/link-preview.ts`: add an endpoint to the `endpoints` map. |
+| **Social link thumbnails** | Some sites restrict the metadata available to link previews. Stash displays a provider card when a cover image is unavailable. | `src/lib/link-preview.ts` |
 | **Server‑side thumbnails** | Images are downsized in the browser before upload (max 3200px), but no thumbnails are generated. Supabase Image Transformations (Pro plan) or an Edge Function could add them. | `AttachmentImage` in `src/components/entries/media.tsx` |
 | **Video poster frames** | Videos show their first frame through `preload="metadata"`. Real poster images would need server‑side processing. | Same as above |
 | **Uploads larger than 50 MB** | The Supabase free plan caps files at 50 MB. On paid plans, raise the bucket limit and switch to resumable (TUS) uploads. | `MAX_FILE_BYTES` in `src/lib/env.ts` and the bucket in the migration |
@@ -230,7 +230,7 @@ No backend changes are needed.
 
 ### Suggested manual test (the four scenarios)
 
-1. Copy an Instagram Reel URL → open Stash → paste anywhere → **Save**. Then search for a word from it, and add it to a collection from the **⋯** menu.
+1. Copy an Instagram Reel URL → open the Inbox → paste → **Save**. Open the Reel in Media, or add it to a collection from the **⋯** menu.
 2. Tap **+** → tap the mic → record → **Save**.
 3. Save a reference → **⋯ → Remind me…** → choose **Saturday 10:00**. Check **Calendar → Week**.
 4. Upload a photo on your phone, then open Stash on a desktop. It appears there within about a second, or on the next refresh.

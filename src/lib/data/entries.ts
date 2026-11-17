@@ -281,6 +281,7 @@ export async function createEntry(userId: string, input: CaptureInput) {
 
   const tasks: Promise<unknown>[] = [];
   let failures: string[] = [];
+  let skippedCollections = 0;
 
   if (files.length) {
     tasks.push(uploadAttachments(userId, entryId, files).then((r) => (failures = r.failures)));
@@ -288,16 +289,18 @@ export async function createEntry(userId: string, input: CaptureInput) {
   if (input.tags?.length) {
     tasks.push(setEntryTags(userId, entryId, input.tags));
   }
-  if (input.collectionIds?.length) {
-    tasks.push(
-      Promise.resolve(
-        supabase
-          .from("entry_collections")
-          .upsert(input.collectionIds.map((cid) => ({ entry_id: entryId, collection_id: cid, user_id: userId })), { onConflict: "entry_id,collection_id", ignoreDuplicates: true }),
-      ).then(({ error }) => {
-        if (error) throw error;
-      }),
-    );
+  // Link each destination separately so a deleted or revoked collection can't block the capture or its other destinations.
+  for (const collectionId of new Set(input.collectionIds)) {
+    tasks.push(Promise.resolve(supabase.from("entry_collections").upsert(
+      { entry_id: entryId, collection_id: collectionId, user_id: userId },
+      { onConflict: "entry_id,collection_id", ignoreDuplicates: true },
+    )).then(({ error }) => {
+      if (!error) return;
+      const missing = error.code === "23503" && error.message.includes("entry_collections_collection_id_fkey");
+      const unavailable = error.code === "42501" && error.message.includes('row-level security policy for table "entry_collections"');
+      if (!missing && !unavailable) throw error;
+      skippedCollections++;
+    }));
   }
   if (input.reminder) {
     const title = input.reminder.title?.trim() || input.title?.trim() || summarize(body ?? url ?? "Reminder");
@@ -322,7 +325,7 @@ export async function createEntry(userId: string, input: CaptureInput) {
   // Link previews are fetched after the save so capture never waits on a slow site.
   if (url) void refreshLinkPreview(entryId, url).catch(() => undefined);
 
-  return { id: entryId, failures };
+  return { id: entryId, failures, skippedCollections };
 }
 
 export function summarize(text: string, max = 80) {

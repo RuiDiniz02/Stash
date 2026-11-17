@@ -31,10 +31,9 @@ function ShareReceiver() {
         files: [] as File[],
       };
       const { title, text } = joinShared(source.title, source.text, source.url);
-      router.replace("/");
       if (text || title || source.files.length) {
-        setTimeout(() => openCapture({ text, title, files: source.files }), 50);
-      }
+        openCapture({ text, title, files: source.files });
+      } else router.replace("/");
     })();
   }, [params, router, openCapture]);
 

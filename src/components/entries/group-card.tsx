@@ -16,7 +16,6 @@ import { SelectionBar } from "./selection-bar";
 import { useGroupDnd, useInboxDnd } from "./dnd";
 import { fetchGroupEntries, useEntries, useEntryCommands } from "@/lib/data/entries";
 import { confirm } from "@/components/ui/confirm";
-import { QuickComposer } from "@/components/capture/quick-composer";
 import { Button } from "@/components/ui/button";
 import { ErrorState, Spinner } from "@/components/ui/misc";
 import { useContextPress } from "@/hooks/use-context-press";
@@ -270,7 +269,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
           ))}
           {members.hasNextPage && <Button variant="ghost" disabled={members.isFetchingNextPage} onClick={() => void members.fetchNextPage()}>Load more from this group</Button>}
           </div>
-          <GroupFooter group={group} entries={loadedMembers} collectionId={contextCollectionId} />
+          <GroupFooter entries={loadedMembers} />
         </DialogContent>
         </SelectionProvider>
       </Dialog>
@@ -280,9 +279,10 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
   );
 }
 
-function GroupFooter({ group, entries, collectionId }: { group: EntryGroup; entries: Entry[]; collectionId?: string }) {
+function GroupFooter({ entries }: { entries: Entry[] }) {
   const selection = useSelection();
+  if (!selection?.active) return null;
   return <div className="shrink-0 border-t bg-background p-3 pb-safe">
-    {selection?.active ? <SelectionBar entries={entries} embedded /> : <QuickComposer groupId={group.id} collectionId={collectionId ?? group.collection_id ?? undefined} />}
+    <SelectionBar entries={entries} embedded />
   </div>;
 }

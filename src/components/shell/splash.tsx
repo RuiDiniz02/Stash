@@ -1,5 +1,4 @@
-import { Logo } from "@/components/logo";
-import { Skeleton } from "@/components/ui/misc";
+import { LogoMark } from "@/components/logo";
 
 /**
  * Launch screen. Rendered in the server HTML, so it appears as soon as the page arrives —
@@ -9,20 +8,14 @@ export function SplashScreen() {
   return (
     <div
       role="status"
-      aria-label="Opening Stash"
-      className="min-h-dvh bg-background pt-safe"
+      className="launch-screen grid min-h-dvh place-items-center overflow-hidden px-6"
     >
-      <div className="flex h-14 items-center border-b px-4 md:px-8" aria-hidden>
-        <Logo />
-      </div>
-      <div className="mx-auto max-w-2xl space-y-4 px-4 py-7" aria-hidden>
-        <Skeleton className="h-4 w-16" />
-        {[0, 1, 2].map((item) => (
-          <div key={item} className="space-y-2.5 rounded-2xl border bg-card p-4">
-            <Skeleton className="h-4 w-2/5" />
-            <Skeleton className="h-3 w-3/4" />
-          </div>
-        ))}
+      <div className="grid -translate-y-6 justify-items-center gap-5 text-center">
+        <div className="launch-mark grid size-28 place-items-center rounded-[36px]" aria-hidden>
+          <LogoMark className="size-[76px] rounded-[25px] shadow-float" />
+        </div>
+        <span className="text-[30px] leading-none font-semibold tracking-[-0.055em]" aria-hidden>Stash</span>
+        <span className="launch-label text-sm text-muted-foreground">Opening Stash…</span>
       </div>
     </div>
   );

@@ -2,19 +2,31 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ChevronLeft, ChevronRight, Download, ExternalLink, PanelRight, X } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight, Download, ExternalLink, PanelRight, X } from "lucide-react";
 import { toast } from "sonner";
 import { downloadStorageFile, useSignedUrl } from "@/lib/data/signed-urls";
 import type { Attachment } from "@/lib/types";
 import { cn, errorMessage } from "@/lib/utils";
 import { Spinner } from "@/components/ui/misc";
 
-export interface LightboxItem extends Attachment {
+interface StoredSlide extends Attachment {
   sourceUrl?: string | null;
   caption?: string | null;
 }
 
-function Slide({ item }: { item: LightboxItem }) {
+interface InstagramSlide {
+  kind: "instagram";
+  id: string;
+  entry_id: string;
+  caption?: string | null;
+  sourceUrl: string;
+  embedUrl: string | null;
+  file_name?: never;
+}
+
+export type LightboxItem = StoredSlide | InstagramSlide;
+
+function AttachmentSlide({ item }: { item: StoredSlide }) {
   const url = useSignedUrl(item.storage_path);
   if (!url) return <Spinner className="size-6 text-white/70" />;
   if (item.kind === "video") {
@@ -22,6 +34,27 @@ function Slide({ item }: { item: LightboxItem }) {
   }
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt={item.file_name ?? ""} className="max-h-full max-w-full rounded-lg object-contain select-none" draggable={false} />;
+}
+
+function InstagramPlayer({ item }: { item: InstagramSlide }) {
+  return (
+    <div className="flex max-h-full w-full max-w-md flex-col items-center gap-3">
+      {item.embedUrl ? (
+        <iframe
+          src={item.embedUrl}
+          title={item.caption ? `${item.caption} · Instagram` : "Instagram post"}
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          allowFullScreen
+          referrerPolicy="no-referrer"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          className="h-[min(70dvh,640px)] w-full rounded-xl border-0 bg-white"
+        />
+      ) : <Camera className="size-12 text-white/70" aria-hidden />}
+      <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-white/10 px-4 text-sm font-medium hover:bg-white/20">
+        <ExternalLink className="size-4" aria-hidden /> Open on Instagram
+      </a>
+    </div>
+  );
 }
 
 export function Lightbox({
@@ -75,7 +108,7 @@ export function Lightbox({
             touchX.current = null;
           }}
         >
-          <DialogPrimitive.Title className="sr-only">{item?.file_name ?? "Media"}</DialogPrimitive.Title>
+          <DialogPrimitive.Title className="sr-only">{item?.caption ?? item?.file_name ?? "Media"}</DialogPrimitive.Title>
           <div className="flex items-center gap-1 px-3 pt-safe">
             <div className="flex h-14 min-w-0 flex-1 items-center gap-2 text-sm text-white/80">
               <span className="tabular-nums">
@@ -93,7 +126,7 @@ export function Lightbox({
                 <PanelRight className="size-5" />
               </button>
             )}
-            {item && (
+            {item && item.kind !== "instagram" && (
               <button
                 onClick={async () => {
                   setDownloading(true);
@@ -116,7 +149,7 @@ export function Lightbox({
             </DialogPrimitive.Close>
           </div>
           <div className="relative flex min-h-0 flex-1 items-center justify-center p-3 pb-safe sm:p-8" onClick={(e) => e.target === e.currentTarget && onClose()}>
-            {item && <Slide key={item.id} item={item} />}
+            {item?.kind === "instagram" ? <InstagramPlayer key={item.id} item={item} /> : item && <AttachmentSlide key={item.id} item={item} />}
             {index !== null && index > 0 && (
               <NavButton side="left" onClick={() => go(-1)} />
             )}

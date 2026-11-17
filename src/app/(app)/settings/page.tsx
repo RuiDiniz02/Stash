@@ -428,7 +428,7 @@ function Shortcuts() {
   const [mod, setMod] = useState("Ctrl");
   useEffect(() => setMod(isMac() ? "⌘" : "Ctrl"), []);
   const items: [string, React.ReactNode][] = [
-    ["New capture", <Kbd key="n">N</Kbd>],
+    ["New capture in the Inbox", <Kbd key="n">N</Kbd>],
     ["Save capture", <span key="s" className="flex gap-1"><Kbd>{mod}</Kbd><Kbd>↵</Kbd></span>],
     ["Search", <span key="k" className="flex gap-1"><Kbd>{mod}</Kbd><Kbd>K</Kbd> or <Kbd>/</Kbd></span>],
     ["Toggle sidebar", <Kbd key="b">[</Kbd>],

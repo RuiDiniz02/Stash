@@ -68,8 +68,8 @@ export function useCapture() {
           );
         }
         try {
-          await createEntry(user.id, { ...input, id });
-          toast.success("Saved", {
+          const { skippedCollections } = await createEntry(user.id, { ...input, id });
+          toast.success(skippedCollections ? "Saved to Inbox" : "Saved", {
             action: opts.onOpen ? { label: "Open", onClick: () => opts.onOpen?.(id) } : undefined,
           });
           return true;
@@ -87,11 +87,11 @@ export function useCapture() {
       const label = files.length === 1 ? "Uploading 1 file…" : `Uploading ${files.length} files…`;
       const toastId = toast.loading(label);
       try {
-        const { failures } = await createEntry(user.id, { ...input, id });
+        const { failures, skippedCollections } = await createEntry(user.id, { ...input, id });
         if (failures.length) {
           toast.warning("Saved, but some files failed", { id: toastId, description: failures.join("\n") });
         } else {
-          toast.success("Saved", {
+          toast.success(skippedCollections ? "Saved to Inbox" : "Saved", {
             id: toastId,
             action: opts.onOpen ? { label: "Open", onClick: () => opts.onOpen?.(id) } : undefined,
           });
