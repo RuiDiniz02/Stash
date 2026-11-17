@@ -18,14 +18,9 @@ import { StashContext, type CapturePrefill, type ReminderPrefill, type StashActi
 
 const COLLAPSE_KEY = "stash-sidebar-collapsed";
 
-// Dialogs are split out of the startup bundle; each loads the first time it is needed,
-// and all of them are prefetched once the browser is idle so first opens stay instant.
-const loadCapture = () => import("@/components/capture/capture-dialog");
-const loadDetail = () => import("@/components/entries/entry-detail");
-const loadReminder = () => import("@/components/reminders/reminder-dialog");
-const CaptureDialog = dynamic(() => loadCapture().then((m) => m.CaptureDialog), { ssr: false });
-const EntryDetailSheet = dynamic(() => loadDetail().then((m) => m.EntryDetailSheet), { ssr: false });
-const ReminderDialog = dynamic(() => loadReminder().then((m) => m.ReminderDialog), { ssr: false });
+const CaptureDialog = dynamic(() => import("@/components/capture/capture-dialog").then((m) => m.CaptureDialog), { ssr: false });
+const EntryDetailSheet = dynamic(() => import("@/components/entries/entry-detail").then((m) => m.EntryDetailSheet), { ssr: false });
+const ReminderDialog = dynamic(() => import("@/components/reminders/reminder-dialog").then((m) => m.ReminderDialog), { ssr: false });
 
 function isEditable(el: EventTarget | null) {
   const node = el as HTMLElement | null;
@@ -81,13 +76,6 @@ function Shell({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   useEffect(() => {
-    const prefetch = () => void Promise.all([loadCapture(), loadDetail(), loadReminder()]).catch(() => undefined);
-    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
-    if (w.requestIdleCallback) w.requestIdleCallback(prefetch);
-    else setTimeout(prefetch, 1500);
-  }, []);
-
-  useEffect(() => {
     try {
       setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
     } catch {
@@ -112,9 +100,11 @@ function Shell({ children }: { children: React.ReactNode }) {
       if (value === null) params.delete(key);
       else params.set(key, value);
       const qs = params.toString();
-      router.push(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+      const target = `${pathname}${qs ? `?${qs}` : ""}${window.location.hash}`;
+      if (value === null) window.history.replaceState(null, "", target);
+      else window.history.pushState(null, "", target);
     },
-    [pathname, router],
+    [pathname],
   );
 
   const actions = useMemo<StashActions>(

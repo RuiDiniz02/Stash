@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { safeInternalPath } from "@/lib/internal-path";
 
 /** Handles email confirmation, magic links and password-reset links (PKCE code or token_hash). */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
-  const rawNext = searchParams.get("next") ?? "/";
-  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+  const next = safeInternalPath(searchParams.get("next"));
   const supabase = await createClient();
 
   const code = searchParams.get("code");

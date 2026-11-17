@@ -129,6 +129,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                 <Link
                   key={c.id}
                   href={href}
+                  prefetch={false}
                   className={cn(
                     "flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors",
                     active ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/70 hover:text-foreground",

@@ -10,7 +10,7 @@ import { invalidateData } from "@/lib/data/keys";
 import { flushOutbox, getQueued, subscribeOutbox } from "@/lib/outbox";
 import { useUser } from "@/lib/user-context";
 
-const PERSONAL_TABLES = ["reminders", "entry_groups"] as const;
+const PERSONAL_TABLES = ["reminders", "entry_groups", "entry_links"] as const;
 const COLLABORATIVE_TABLES = [
   "entries",
   "attachments",

@@ -3,9 +3,10 @@
 import { memo, useState } from "react";
 import dynamic from "next/dynamic";
 import { format, isPast } from "date-fns";
-import { Bell, Check, CloudOff, Folder, Hash, Layers, Pin, Repeat, Star } from "lucide-react";
+import { Bell, Check, CloudOff, Folder, Hash, Layers, Minus, Pin, Repeat, Star } from "lucide-react";
 import { useCollections } from "@/lib/data/collections";
 import { useGroups } from "@/lib/data/groups";
+import { useEntryCommands } from "@/lib/data/entries";
 import type { Entry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useStash } from "@/components/shell/stash-context";
@@ -49,7 +50,8 @@ export const EntryCard = memo(function EntryCard({
   const drag = useEntryDnd(entry, noDrag || !editable);
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
-  const press = useContextPress(() => setActionsOpen(true), !entry.pending && !selection?.active);
+  const commands = useEntryCommands();
+  const press = useContextPress(() => selection?.start(entry.id), !drag.enabled && editable && !entry.pending && !!selection && !selection.active);
 
   const visual = entry.attachments.filter((a) => a.kind === "image" || a.kind === "video");
   const audio = entry.attachments.filter((a) => a.kind === "audio");
@@ -86,7 +88,12 @@ export const EntryCard = memo(function EntryCard({
           activate();
         }
       }}
-      onContextMenu={(e) => { if (!entry.pending) { e.preventDefault(); e.stopPropagation(); setActionsOpen(true); } }}
+      onContextMenu={(e) => {
+        if (entry.pending) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if ((e.nativeEvent as PointerEvent).pointerType !== "touch" && window.matchMedia("(any-pointer: fine)").matches) setActionsOpen(true);
+      }}
       className={cn(
         "entry-content group relative flex flex-col gap-2.5 rounded-2xl border bg-card p-3 text-left shadow-soft transition-[box-shadow,border-color,transform,opacity] duration-200 outline-none select-none [-webkit-touch-callout:none] hover:border-border hover:shadow-float focus-visible:ring-3 focus-visible:ring-ring/40 animate-fade-up sm:select-auto",
         drag.enabled && "touch-manipulation",
@@ -100,7 +107,9 @@ export const EntryCard = memo(function EntryCard({
     >
       {drag.isOver && (
         <span className="pointer-events-none absolute inset-x-0 -top-3 z-20 mx-auto w-fit rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground shadow">
-          {targetGroup ? `Add to ${targetGroup.title}` : "Create group"}
+          {dnd?.activeId?.startsWith("drag-group:")
+            ? targetGroup ? `Merge into ${targetGroup.title}` : "Add idea to group"
+            : targetGroup ? `Add to ${targetGroup.title}` : "Create group"}
         </span>
       )}
       {selection && !entry.pending && editable && (
@@ -197,6 +206,19 @@ export const EntryCard = memo(function EntryCard({
         ))}
       </footer>
 
+      {selecting && !selection?.target && (
+        <button
+          type="button"
+          aria-label="Delete entry"
+          title="Delete entry"
+          onClick={(event) => {
+            event.stopPropagation();
+            commands.remove([entry.id]);
+            if (selected) selection?.toggle(entry.id);
+          }}
+          className="absolute right-1 top-1 z-10 grid size-9 place-items-center rounded-full bg-card text-destructive shadow-sm ring-1 ring-border hover:bg-destructive/10"
+        ><Minus className="size-4" /></button>
+      )}
       {!entry.pending && !selecting && (
         <div className="absolute top-2 right-2 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 sm:has-[[data-state=open]]:opacity-100">
           <EntryActions entry={entry} contextCollectionId={contextCollectionId} open={actionsOpen} onOpenChange={setActionsOpen} />

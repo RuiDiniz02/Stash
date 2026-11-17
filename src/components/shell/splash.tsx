@@ -12,10 +12,12 @@ export function SplashScreen() {
       aria-label="Opening Stash"
       className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background pt-safe pb-safe"
     >
-      <div className="flex flex-col items-center gap-4 animate-splash-in">
-        <LogoMark className="size-16 rounded-[20px] shadow-float" />
+      <div className="flex flex-col items-center gap-3 animate-splash-in">
+        <div className="grid size-24 place-items-center rounded-[28px] bg-primary-soft">
+          <LogoMark className="splash-mark size-16 rounded-[20px] shadow-float" />
+        </div>
         <span className="text-lg font-semibold tracking-tight">Stash</span>
-        <span className="relative mt-2 h-1 w-24 overflow-hidden rounded-full bg-muted">
+        <span className="relative mt-1 h-1 w-20 overflow-hidden rounded-full bg-muted" aria-hidden>
           <span className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary animate-splash-bar" />
         </span>
       </div>

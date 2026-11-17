@@ -1,10 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type SyntheticEvent } from "react";
 import {
   DndContext,
   DragOverlay,
   MouseSensor,
+  TouchSensor,
   pointerWithin,
   useDraggable,
   useDroppable,
@@ -13,9 +14,10 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { FileText, Link2, Mic, StickyNote } from "lucide-react";
+import { FileText, Layers, Link2, Mic, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import { suggestGroupTitle, useGroupCommands } from "@/lib/data/groups";
+import { fetchGroupEntries } from "@/lib/data/entries";
 import { useUser } from "@/lib/user-context";
 import type { Entry, EntryGroup } from "@/lib/types";
 import { errorMessage } from "@/lib/utils";
@@ -23,6 +25,16 @@ import { AttachmentImage } from "./media";
 import { useSelection } from "./selection";
 
 type DropData = { type: "entry"; entry: Entry } | { type: "group"; group: EntryGroup };
+
+function ignoreNestedControls(listeners: ReturnType<typeof useDraggable>["listeners"]) {
+  return Object.fromEntries(Object.entries(listeners ?? {}).map(([name, listener]) => [name, (event: SyntheticEvent<HTMLElement>) => {
+    const target = event.target as Element;
+    if (!event.currentTarget.contains(target)) return;
+    const control = target.closest("button, a, input, textarea, select, audio, video, [role=button], [data-no-entry-drag]");
+    if (control && control !== event.currentTarget) return;
+    listener(event);
+  }]));
+}
 
 interface InboxDndState {
   activeId: string | null;
@@ -54,16 +66,20 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 330, tolerance: 9 } }),
   );
 
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries]);
   const moving = useCallback(
     (id: string) => {
-      if (selection?.active && selection.isSelected(id)) return entries.filter((e) => selection.isSelected(e.id));
+      if (selection?.active && selection.isSelected(id)) {
+        const available = new Map([...selection.registered, ...byId]);
+        return [...available.values()].filter((e) => selection.isSelected(e.id) && !e.pending && e.user_id === user.id);
+      }
       const e = byId.get(id);
       return e ? [e] : [];
     },
-    [byId, entries, selection],
+    [byId, selection, user.id],
   );
 
   const onDragStart = (event: DragStartEvent) => {
@@ -75,21 +91,39 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
     const id = String(event.active.id);
     setActiveId(null);
     lastDragEnd.current = Date.now();
-    const items = moving(id);
+    const source = event.active.data.current as DropData | undefined;
     const over = event.over?.data.current as DropData | undefined;
     const isTouch = !!event.activatorEvent && "touches" in event.activatorEvent;
     const travelled = Math.hypot(event.delta.x, event.delta.y);
 
     try {
-      if (!over) {
-        // Held and released without moving: start selecting, like a long-press.
-        if (isTouch && travelled < 12 && selection) {
-          if (selection.active) selection.toggle(id);
-          else selection.start(id);
+      if (isTouch && travelled < 12 && selection) {
+        if (source?.type === "group") {
+          if (!selection.active) selection.start();
+          const members = await fetchGroupEntries(source.group.id, user.id);
+          selection.setMany(members.map((entry) => entry.id), true, members);
+        } else if (!selection.active) {
+          selection.start(id);
         }
         return;
       }
+      if (!over || !source) return;
 
+      if (source.type === "group") {
+        const targetGroup = over.type === "group" ? over.group : groups.find((group) => group.id === over.entry.group_id);
+        if (targetGroup?.id === source.group.id) return;
+        if (targetGroup) {
+          const members = await fetchGroupEntries(source.group.id, user.id, true);
+          if (members.length) await commands.add(targetGroup, members);
+        } else if (over.type === "entry") {
+          await commands.add(source.group, [over.entry]);
+        }
+        selection?.clear();
+        return;
+      }
+
+      const items = moving(id);
+      if (!items.length) return;
       if (over.type === "group") {
         const toMove = items.filter((e) => e.group_id !== over.group.id);
         if (toMove.length) await commands.add(over.group, toMove);
@@ -123,19 +157,26 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
   );
 
   const active = activeId ? byId.get(activeId) : undefined;
+  const activeGroup = activeId?.startsWith("drag-group:") ? groups.find((group) => group.id === activeId.slice("drag-group:".length)) : undefined;
   const count = activeId ? moving(activeId).length : 0;
 
   return (
     <InboxDndContext.Provider value={value}>
       <DndContext
         sensors={sensors}
-        collisionDetection={pointerWithin}
+        collisionDetection={(args) => pointerWithin({
+          ...args,
+          droppableContainers: args.droppableContainers.filter(({ id }) => id !== `entry:${args.active.id}` && `drag-${id}` !== args.active.id),
+        })}
         onDragStart={onDragStart}
         onDragEnd={(e) => void onDragEnd(e)}
-        onDragCancel={() => setActiveId(null)}
+        onDragCancel={() => { setActiveId(null); lastDragEnd.current = Date.now(); }}
       >
         {children}
-        <DragOverlay dropAnimation={null}>{active && <DragPreview entry={active} count={count} />}</DragOverlay>
+        <DragOverlay dropAnimation={null}>
+          {active && <DragPreview entry={active} count={count} />}
+          {activeGroup && <div className="flex w-56 -rotate-2 items-center gap-2 rounded-2xl border bg-card p-3 text-sm font-medium shadow-float"><Layers className="size-4 shrink-0 text-primary" /><span className="truncate">{activeGroup.title}</span></div>}
+        </DragOverlay>
       </DndContext>
     </InboxDndContext.Provider>
   );
@@ -145,7 +186,7 @@ export function InboxDnd({ entries, groups, children }: { entries: Entry[]; grou
 export function useEntryDnd(entry: Entry, disabled = false) {
   const ctx = useInboxDnd();
   const off = !ctx || disabled || !!entry.pending;
-  const drag = useDraggable({ id: entry.id, disabled: off });
+  const drag = useDraggable({ id: entry.id, disabled: off, data: { type: "entry", entry } satisfies DropData });
   const drop = useDroppable({ id: `entry:${entry.id}`, data: { type: "entry", entry } satisfies DropData, disabled: off });
   const setNodeRef = useCallback(
     (node: HTMLElement | null) => {
@@ -159,16 +200,28 @@ export function useEntryDnd(entry: Entry, disabled = false) {
   return {
     enabled: !off,
     setNodeRef,
-    dragProps: off ? {} : { ...drag.attributes, ...drag.listeners },
+    dragProps: off ? {} : { ...drag.attributes, ...ignoreNestedControls(drag.listeners) },
     isDragging: drag.isDragging,
     isOver: drop.isOver && !drag.isDragging && !!ctx?.activeId,
   };
 }
 
-export function useGroupDrop(group: EntryGroup) {
+export function useGroupDnd(group: EntryGroup, disabled = false) {
   const ctx = useInboxDnd();
-  const drop = useDroppable({ id: `group:${group.id}`, data: { type: "group", group } satisfies DropData, disabled: !ctx });
-  return { setNodeRef: drop.setNodeRef, isOver: drop.isOver && !!ctx?.activeId };
+  const data = { type: "group", group } satisfies DropData;
+  const drag = useDraggable({ id: `drag-group:${group.id}`, data, disabled: !ctx || disabled });
+  const drop = useDroppable({ id: `group:${group.id}`, data, disabled: !ctx || disabled });
+  const setNodeRef = useCallback((node: HTMLElement | null) => {
+    drag.setNodeRef(node);
+    drop.setNodeRef(node);
+  }, [drag.setNodeRef, drop.setNodeRef]);
+  return {
+    enabled: !!ctx && !disabled,
+    setNodeRef,
+    dragProps: ctx && !disabled ? ignoreNestedControls(drag.listeners) : {},
+    isDragging: drag.isDragging,
+    isOver: drop.isOver && !drag.isDragging && !!ctx?.activeId,
+  };
 }
 
 function DragPreview({ entry, count }: { entry: Entry; count: number }) {

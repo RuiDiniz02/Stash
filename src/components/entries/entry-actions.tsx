@@ -13,6 +13,7 @@ import {
   ExternalLink,
   FolderPlus,
   Layers,
+  Link2,
   Pin,
   PinOff,
   Share2,
@@ -42,6 +43,7 @@ import { invalidateData } from "@/lib/data/keys";
 
 const CollectionSheet = dynamic(() => import("@/components/collections/collection-sheet").then((m) => m.CollectionSheet), { ssr: false });
 const GroupSheet = dynamic(() => import("./group-sheet").then((m) => m.GroupSheet), { ssr: false });
+const LinkIdeaDialog = dynamic(() => import("./link-idea-dialog").then((m) => m.LinkIdeaDialog), { ssr: false });
 
 export function entryShareText(entry: Entry) {
   return [entry.title, entry.body, entry.description].filter(Boolean).join("\n\n");
@@ -86,6 +88,7 @@ export function EntryActions({ entry, contextCollectionId, className, align = "e
   const commands = useEntryCommands();
   const [collectionsOpen, setCollectionsOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
   const user = useUser();
   const groupCommands = useGroupCommands(user.id);
   const selection = useSelection();
@@ -125,6 +128,9 @@ export function EntryActions({ entry, contextCollectionId, className, align = "e
           </DropdownMenuItem>}
           {editable && <DropdownMenuItem onSelect={() => setCollectionsOpen(true)}>
             <FolderPlus /> Add to collection…
+          </DropdownMenuItem>}
+          {editable && <DropdownMenuItem onSelect={() => setLinkOpen(true)}>
+            <Link2 /> Link another idea…
           </DropdownMenuItem>}
           {editable && (entry.group_id ? (
             <DropdownMenuItem onSelect={() => groupCommands.removeEntries([entry]).catch((e) => toast.error(errorMessage(e)))}>
@@ -185,6 +191,7 @@ export function EntryActions({ entry, contextCollectionId, className, align = "e
       <div className="contents" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         {collectionsOpen && <CollectionSheet open onOpenChange={setCollectionsOpen} entries={[entry]} />}
         {groupOpen && <GroupSheet open onOpenChange={setGroupOpen} entries={[entry]} />}
+        {linkOpen && <LinkIdeaDialog entryId={entry.id} onClose={() => setLinkOpen(false)} />}
       </div>
     </>
   );

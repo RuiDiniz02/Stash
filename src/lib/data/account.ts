@@ -21,7 +21,7 @@ async function fetchAll<T>(userId: string, table: string, select = "*"): Promise
 /** Builds a JSON export of everything the user owns, with 7-day download links for files. */
 export async function exportData(userId: string, email: string | null) {
   const supabase = createClient();
-  const [entries, collections, entryCollections, tags, entryTags, attachments, reminders] = await Promise.all([
+  const [entries, collections, entryCollections, tags, entryTags, attachments, reminders, entryLinks] = await Promise.all([
     fetchAll(userId, "entries", "id,kind,title,body,description,url,link_preview,is_pinned,is_favorite,is_archived,created_at,updated_at"),
     fetchAll(userId, "collections"),
     fetchAll(userId, "entry_collections"),
@@ -29,6 +29,7 @@ export async function exportData(userId: string, email: string | null) {
     fetchAll(userId, "entry_tags"),
     fetchAll<{ storage_path: string } & Record<string, unknown>>(userId, "attachments"),
     fetchAll(userId, "reminders"),
+    fetchAll(userId, "entry_links"),
   ]);
 
   const links = new Map<string, string>();
@@ -51,6 +52,7 @@ export async function exportData(userId: string, email: string | null) {
     entry_tags: entryTags,
     attachments: attachments.map((a) => ({ ...a, download_url: links.get(a.storage_path) ?? null })),
     reminders,
+    entry_links: entryLinks,
   };
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });

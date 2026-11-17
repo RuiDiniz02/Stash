@@ -1,6 +1,6 @@
 import "server-only";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import type { IncomingMessage } from "node:http";
+import { requestPublicUrl } from "./public-http";
 import type { LinkPreview, Provider } from "@/lib/types";
 
 const MAX_BYTES = 768 * 1024;
@@ -37,80 +37,38 @@ function vimeoId(url: URL) {
 
 // --- SSRF protection -------------------------------------------------------
 
-function isPrivateIPv4(ip: string) {
-  const [a, b] = ip.split(".").map(Number);
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 192 && b === 0) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    a >= 224
-  );
-}
-
-function isPrivateIP(ip: string) {
-  if (isIP(ip) === 4) return isPrivateIPv4(ip);
-  const v6 = ip.toLowerCase();
-  if (v6 === "::" || v6 === "::1") return true;
-  if (v6.startsWith("::ffff:")) return isPrivateIPv4(v6.slice(7));
-  return /^(fc|fd|fe8|fe9|fea|feb|ff)/.test(v6);
-}
-
-async function assertPublicHost(url: URL) {
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only http(s) URLs are allowed");
-  if (url.port && !["80", "443", ""].includes(url.port)) throw new Error("Port not allowed");
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal") || host.endsWith(".local")) {
-    throw new Error("Host not allowed");
-  }
-  const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true, verbatim: true });
-  if (!addresses.length || addresses.some((a) => isPrivateIP(a.address))) throw new Error("Host not allowed");
-}
-
-async function safeFetch(input: string, accept: string): Promise<{ res: Response; url: URL }> {
+async function safeFetch(input: string, accept: string) {
   let url = new URL(input);
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
-    await assertPublicHost(url);
-    const res = await fetch(url, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { "user-agent": UA, accept, "accept-language": "en,*;q=0.5" },
-    });
-    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
-      url = new URL(res.headers.get("location")!, url);
+    const res = await requestPublicUrl(url, { "user-agent": UA, accept, "accept-language": "en,*;q=0.5" }, signal);
+    const status = res.statusCode ?? 0;
+    if (status >= 300 && status < 400 && res.headers.location) {
+      res.destroy();
+      url = new URL(res.headers.location, url);
       continue;
     }
-    return { res, url };
+    return { res, url, ok: status >= 200 && status < 300 };
   }
   throw new Error("Too many redirects");
 }
 
-async function readLimited(res: Response) {
-  if (!res.body) return "";
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
+async function readLimited(res: IncomingMessage, stopAtHead = false) {
+  const chunks: Buffer[] = [];
   let total = 0;
-  while (total < MAX_BYTES) {
-    const { done, value } = await reader.read();
-    if (done || !value) break;
-    chunks.push(value);
-    total += value.byteLength;
-    // Stop once the <head> is over — that's where the metadata lives.
-    if (new TextDecoder().decode(value).includes("</head>")) break;
+  let tail = "";
+  for await (const value of res) {
+    const chunk = (value as Buffer).subarray(0, MAX_BYTES - total);
+    chunks.push(chunk);
+    total += chunk.byteLength;
+    if (total >= MAX_BYTES) break;
+    if (stopAtHead) {
+      const text = tail + chunk.toString("utf8").toLowerCase();
+      if (text.includes("</head>")) break;
+      tail = text.slice(-6);
+    }
   }
-  void reader.cancel().catch(() => undefined);
-  const buf = new Uint8Array(total);
-  let offset = 0;
-  for (const c of chunks) {
-    buf.set(c, offset);
-    offset += c.byteLength;
-  }
-  return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+  return Buffer.concat(chunks, total).toString("utf8");
 }
 
 // --- HTML parsing ----------------------------------------------------------
@@ -122,7 +80,7 @@ function decode(s: string) {
     .replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e: string) => {
       if (e[0] === "#") {
         const code = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-        return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+        return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
       }
       return ENTITIES[e.toLowerCase()] ?? m;
     })
@@ -166,9 +124,9 @@ const WALL_TITLES = /^(instagram|tiktok - make your day|tiktok|facebook|log in|l
 
 async function oembed(endpoint: string): Promise<Record<string, unknown> | null> {
   try {
-    const { res } = await safeFetch(endpoint, "application/json");
-    if (!res.ok) return null;
-    return (await res.json()) as Record<string, unknown>;
+    const { res, ok } = await safeFetch(endpoint, "application/json");
+    if (!ok) { res.destroy(); return null; }
+    return JSON.parse(await readLimited(res)) as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -197,7 +155,7 @@ export async function getLinkPreview(raw: string): Promise<LinkPreview> {
         title: clip(String(data.title ?? ""), 300),
         author: clip(data.author_name ? String(data.author_name) : null, 120),
         site_name: String(data.provider_name ?? provider),
-        image: typeof data.thumbnail_url === "string" ? data.thumbnail_url : null,
+        image: typeof data.thumbnail_url === "string" ? absolutize(data.thumbnail_url, url) : null,
         description: data.author_name ? `by ${String(data.author_name)}` : null,
         embed_id: provider === "youtube" ? youtubeId(url) : provider === "vimeo" ? vimeoId(url) : null,
       };
@@ -205,13 +163,14 @@ export async function getLinkPreview(raw: string): Promise<LinkPreview> {
   }
 
   try {
-    const { res, url: finalUrl } = await safeFetch(raw, "text/html,application/xhtml+xml");
-    const type = res.headers.get("content-type") ?? "";
-    if (!res.ok) return { ...base, failed: true };
+    const { res, url: finalUrl, ok } = await safeFetch(raw, "text/html,application/xhtml+xml");
+    const type = res.headers["content-type"] ?? "";
+    if (!ok || !type.includes("html")) res.destroy();
+    if (!ok) return { ...base, failed: true };
     if (type.startsWith("image/")) return { ...base, image: finalUrl.toString(), title: finalUrl.pathname.split("/").pop() ?? null };
     if (!type.includes("html")) return { ...base, title: finalUrl.pathname.split("/").pop() || finalUrl.hostname, site_name: finalUrl.hostname };
 
-    const html = await readLimited(res);
+    const html = await readLimited(res, true);
     const { meta, title, icon } = parseMeta(html);
     const pick = (...keys: string[]) => keys.map((k) => meta.get(k)).find(Boolean);
     const ogTitle = pick("og:title", "twitter:title") ?? title;

@@ -11,6 +11,7 @@ import { useLocalState } from "@/hooks/use-local-state";
 import type { EntryView } from "@/lib/data/entries";
 import { cn } from "@/lib/utils";
 import { VERSION_LABEL } from "@/lib/version";
+import { useCollections } from "@/lib/data/collections";
 
 const VIEWS: { value: EntryView; label: string; icon: typeof InboxIcon }[] = [
   { value: "inbox", label: "All", icon: InboxIcon },
@@ -32,6 +33,7 @@ function Inbox() {
   const [layout, setLayout] = useLayoutPref("inbox");
   const [view, setView] = useLocalState<EntryView>("stash-inbox-view", "inbox");
   const selection = useSelection()!;
+  const { data: collections } = useCollections();
 
   return (
     <>
@@ -80,7 +82,7 @@ function Inbox() {
           <p className="py-6 text-center text-[11px] text-muted-foreground/60 tabular-nums md:hidden">Stash {VERSION_LABEL}</p>
         </div>
       </div>
-      {!selection.active && <QuickComposer docked />}
+      {!selection.active && <QuickComposer docked collections={collections} />}
     </>
   );
 }

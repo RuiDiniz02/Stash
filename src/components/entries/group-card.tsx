@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Check, ChevronDown, Ellipsis, FileText, FolderPlus, Layers, Link2, Mic, Pencil, Plus, StickyNote, Trash2, Ungroup } from "lucide-react";
+import { Check, ChevronDown, Ellipsis, FileText, FolderPlus, Layers, Link2, Mic, Minus, Pencil, Plus, StickyNote, Trash2, Ungroup } from "lucide-react";
 import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/menu";
 import { useGroupCommands } from "@/lib/data/groups";
@@ -13,7 +13,7 @@ import { AttachmentImage } from "./media";
 import { EntryCard } from "./entry-card";
 import { SelectionProvider, useSelection } from "./selection";
 import { SelectionBar } from "./selection-bar";
-import { useGroupDrop, useInboxDnd } from "./dnd";
+import { useGroupDnd, useInboxDnd } from "./dnd";
 import { fetchGroupEntries, useEntries, useEntryCommands } from "@/lib/data/entries";
 import { confirm } from "@/components/ui/confirm";
 import { QuickComposer } from "@/components/capture/quick-composer";
@@ -53,14 +53,14 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
   const [menuOpen, setMenuOpen] = useState(false);
   const [collectionEntries, setCollectionEntries] = useState<Entry[] | null>(null);
   const [selectionIds, setSelectionIds] = useState<string[] | null>(null);
-  const press = useContextPress(() => setMenuOpen(true), !selection?.active);
   const members = useEntries({ groupId: group.id }, open);
   const queued = useQueuedEntries({ groupId: group.id });
   const fetched = members.data?.pages.flat() ?? entries;
   const loadedMembers = [...queued.filter((entry) => !fetched.some((member) => member.id === entry.id)), ...fetched];
   const [title, setTitle] = useState(group.title);
   const dnd = useInboxDnd();
-  const drop = useGroupDrop(group);
+  const drag = useGroupDnd(group, renaming || open || queued.length > 0);
+  const press = useContextPress(() => selection?.start(), !drag.enabled && !renaming && !!selection && !selection.active);
   const ref = useRef<HTMLElement | null>(null);
   const cancelled = useRef(false);
 
@@ -101,7 +101,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
   }
 
   const headerClick = () => {
-    if (press.suppressClick()) return;
+    if (press.suppressClick() || dnd?.justDragged()) return;
     if (selection?.active) {
       void fetchGroupEntries(group.id, user.id).then((all) => {
         const allIds = all.map((entry) => entry.id);
@@ -136,22 +136,24 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
     <section
       ref={(node) => {
         ref.current = node;
-        drop.setNodeRef(node);
+        drag.setNodeRef(node);
       }}
       aria-label={`Group ${group.title}`}
-      {...press.handlers}
-      onPointerDown={(event) => { if (!(event.target as HTMLElement).closest("article")) press.handlers.onPointerDown(event); }}
-      onContextMenu={(event) => { event.preventDefault(); setMenuOpen(true); }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        if ((event.nativeEvent as PointerEvent).pointerType !== "touch" && window.matchMedia("(any-pointer: fine)").matches) setMenuOpen(true);
+      }}
       className={cn(
         "entry-content relative w-full rounded-2xl border bg-card shadow-soft transition-[transform,box-shadow] duration-200 animate-fade-up",
         layout === "grid" && "mb-3 break-inside-avoid",
         allSelected && "ring-2 ring-primary",
-        drop.isOver && "scale-[0.98] ring-2 ring-primary shadow-float",
+        drag.isDragging && "opacity-40",
+        drag.isOver && "scale-[0.98] ring-2 ring-primary shadow-float",
       )}
     >
-      {drop.isOver && (
+      {drag.isOver && (
         <span className="pointer-events-none absolute inset-x-0 -top-3 z-20 mx-auto w-fit rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground shadow">
-          Add to {group.title}
+          {dnd?.activeId?.startsWith("drag-group:") ? `Merge into ${group.title}` : `Add to ${group.title}`}
         </span>
       )}
       <div className="flex items-center gap-2.5 p-3">
@@ -180,7 +182,7 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
             />
           </div>
         ) : (
-          <button type="button" onClick={headerClick} aria-label={`Open group ${group.title}, ${group.entry_count} items`} aria-haspopup="dialog" aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-3 text-left after:absolute after:inset-0 after:rounded-2xl after:content-['']">
+          <button type="button" {...drag.dragProps} {...press.handlers} onClick={headerClick} aria-label={`Open group ${group.title}, ${group.entry_count} items`} aria-haspopup="dialog" aria-expanded={open} className="flex min-w-0 flex-1 touch-manipulation items-center gap-3 text-left select-none [-webkit-touch-callout:none] after:absolute after:inset-0 after:rounded-2xl after:content-['']">
             <span
               className={cn(
                 "grid size-9 shrink-0 place-items-center rounded-xl",
@@ -198,6 +200,15 @@ export function GroupCard({ group, entries, layout, contextCollectionId }: { gro
             </span>
             <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
           </button>
+        )}
+        {selection?.active && !selection.target && !queued.length && (
+          <button
+            type="button"
+            aria-label="Ungroup and keep entries"
+            title="Ungroup and keep entries"
+            onClick={() => { void commands.ungroup(group).then(selection.clear).catch((error) => toast.error(errorMessage(error))); }}
+            className="relative z-[1] grid size-9 shrink-0 place-items-center rounded-full bg-card text-destructive shadow-sm ring-1 ring-border hover:bg-destructive/10"
+          ><Minus className="size-4" /></button>
         )}
         {!selection?.active && (
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>

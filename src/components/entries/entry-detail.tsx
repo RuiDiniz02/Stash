@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, isPast } from "date-fns";
 import { Bell, Check, Link2, Paperclip, Plus, RefreshCw, Repeat, Trash2, X } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   useEntry,
   useEntryCommands,
   useUpdateEntry,
+  type EntryPatch,
 } from "@/lib/data/entries";
 import { invalidateData } from "@/lib/data/keys";
 import { REPEAT_LABELS, useReminderMutations } from "@/lib/data/reminders";
@@ -28,18 +29,41 @@ import { useStash } from "@/components/shell/stash-context";
 import { AttachmentAudio, AttachmentFile, AttachmentImage, AttachmentVideoThumb } from "./media";
 import { LinkCard, detectProvider } from "./link-card";
 import { EntryActions } from "./entry-actions";
+import { RelatedIdeas } from "./related-ideas";
 
 export function EntryDetailSheet({ entryId, onClose }: { entryId: string | null; onClose: () => void }) {
+  const { openEntry } = useStash();
+  const editor = useRef<{ save: () => Promise<boolean> }>(null);
+  const closing = useRef(false);
+
+  async function afterSaving(action: () => void) {
+    if (closing.current) return;
+    closing.current = true;
+    try {
+      if (await (editor.current?.save() ?? true)) action();
+    } finally {
+      closing.current = false;
+    }
+  }
+
   return (
-    <Dialog open={!!entryId} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={!!entryId} onOpenChange={(o) => { if (!o) void afterSaving(onClose); }}>
       <DialogContent variant="right" hideClose overlayClassName="bg-black/20 backdrop-blur-0 sm:bg-black/10" aria-describedby={undefined}>
-        {entryId && <EntryDetail entryId={entryId} onClose={onClose} />}
+        {entryId && <EntryDetail entryId={entryId} editorRef={editor} onClose={() => void afterSaving(onClose)} onDiscard={onClose} onOpenRelated={(id) => void afterSaving(() => openEntry(id))} />}
       </DialogContent>
     </Dialog>
   );
 }
 
-function EntryDetail({ entryId, onClose }: { entryId: string; onClose: () => void }) {
+function EntryDetail({
+  entryId, editorRef, onClose, onDiscard, onOpenRelated,
+}: {
+  entryId: string;
+  editorRef: Ref<{ save: () => Promise<boolean> }>;
+  onClose: () => void;
+  onDiscard: () => void;
+  onOpenRelated: (id: string) => void;
+}) {
   const { data: entry, isLoading, error, refetch } = useEntry(entryId);
   const user = useUser();
   const editable = entry?.user_id === user.id;
@@ -55,6 +79,16 @@ function EntryDetail({ entryId, onClose }: { entryId: string; onClose: () => voi
         </DialogTitle>
         {entry && <EntryActions entry={entry} />}
       </div>
+      {entry && (
+        <p id="note-save-hint" className="shrink-0 border-b bg-muted/30 px-5 py-2.5 text-xs leading-normal text-muted-foreground">
+          {editable ? (
+            <>
+              <span className="hidden [@media(pointer:fine)]:inline">Click outside the note to save automatically.</span>
+              <span className="[@media(pointer:fine)]:hidden">Tap outside the note to save automatically.</span>
+            </>
+          ) : "Shared note · View only"}
+        </p>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {isLoading && (
           <div className="space-y-3 p-5">
@@ -65,13 +99,21 @@ function EntryDetail({ entryId, onClose }: { entryId: string; onClose: () => voi
         )}
         {error && <ErrorState error={error} onRetry={() => refetch()} />}
         {!isLoading && !error && !entry && <p className="p-8 text-center text-sm text-muted-foreground">This entry no longer exists.</p>}
-        {entry && <EntryEditor key={entry.id} entry={entry} readOnly={!editable} />}
+        {entry && <EntryEditor key={entry.id} entry={entry} readOnly={!editable} ref={editorRef} onDiscard={onDiscard} onOpenRelated={onOpenRelated} />}
       </div>
     </div>
   );
 }
 
-function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boolean }) {
+function EntryEditor({
+  entry, readOnly, ref, onDiscard, onOpenRelated,
+}: {
+  entry: Entry;
+  readOnly: boolean;
+  ref: Ref<{ save: () => Promise<boolean> }>;
+  onDiscard: () => void;
+  onOpenRelated: (id: string) => void;
+}) {
   const user = useUser();
   const qc = useQueryClient();
   const update = useUpdateEntry();
@@ -85,7 +127,15 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+  const savedFields = useRef({ title: entry.title, body: entry.body, url: entry.url });
+  const draft = useRef({ title, body, url });
+  const saving = useRef<Promise<boolean> | null>(null);
+  const acceptQueuedEdits = useRef(false);
+
+  useImperativeHandle(ref, () => ({ save: flushEdits }));
 
   // Keep local fields in sync when the entry changes on another device.
   useEffect(() => setCollectionIds(entry.collection_ids), [entry.collection_ids]);
@@ -144,31 +194,68 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
     );
   }
 
-  function save(field: "title" | "body", value: string) {
-    const clean = value.trim() || null;
-    if (clean === (entry[field] ?? null)) return;
-    update.mutate({ id: entry.id, patch: { [field]: clean } }, { onError: (e) => toast.error(errorMessage(e)) });
+  function edit(field: "title" | "body" | "url", value: string) {
+    draft.current[field] = value;
+    if (field === "title") setTitle(value);
+    if (field === "body") setBody(value);
+    if (field === "url") setUrl(value);
+    if (!saving.current) setSaveStatus("idle");
   }
 
-  async function saveUrl() {
-    const clean = url.trim() ? extractUrl(url.trim()) : null;
-    if (url.trim() && !clean) {
-      toast.error("That doesn't look like a valid http(s) link");
-      setUrl(entry.url ?? "");
-      return;
+  async function flushEdits(): Promise<boolean> {
+    if (readOnly) return true;
+    if (saving.current) {
+      acceptQueuedEdits.current = true;
+      return saving.current;
     }
-    if (clean === entry.url) return;
-    setUrl(clean ?? "");
-    update.mutate(
-      {
-        id: entry.id,
-        patch: { url: clean, link_preview: null, kind: deriveKind(clean, entry.attachments.map((a) => a.kind)) },
-      },
-      {
-        onSuccess: () => clean && refreshLinkPreview(entry.id, clean).then(() => invalidateData(qc)),
-        onError: (e) => toast.error(errorMessage(e)),
-      },
-    );
+
+    async function saveChanges() {
+      do {
+        acceptQueuedEdits.current = false;
+        const current = draft.current;
+        const nextUrl = current.url.trim() ? extractUrl(current.url.trim()) : null;
+        const next = { title: current.title.trim() || null, body: current.body.trim() || null, url: nextUrl };
+        if (current.url.trim() && !nextUrl) {
+          setSaveError("Enter a valid http(s) link or clear the link field.");
+          setSaveStatus("error");
+          return false;
+        }
+
+        const patch: EntryPatch = {};
+        if (next.title !== savedFields.current.title) patch.title = next.title;
+        if (next.body !== savedFields.current.body) patch.body = next.body;
+        if (next.url !== savedFields.current.url) {
+          patch.url = next.url;
+          patch.link_preview = null;
+          patch.kind = deriveKind(next.url, entry.attachments.map((attachment) => attachment.kind));
+        }
+        if (!Object.keys(patch).length) return true;
+
+        setSaveStatus("saving");
+        try {
+          if (!navigator.onLine) throw new Error("You're offline. Reconnect and try again.");
+          await update.mutateAsync({ id: entry.id, patch });
+          savedFields.current = next;
+          if (patch.url) {
+            void refreshLinkPreview(entry.id, patch.url).then(() => invalidateData(qc)).catch(() => undefined);
+          }
+          setSaveStatus("saved");
+        } catch (error) {
+          setSaveError(errorMessage(error, "Couldn't save your changes"));
+          setSaveStatus("error");
+          return false;
+        }
+      } while (acceptQueuedEdits.current);
+      return true;
+    }
+
+    const operation = saveChanges();
+    saving.current = operation;
+    try {
+      return await operation;
+    } finally {
+      saving.current = null;
+    }
   }
 
   async function onCollections(next: string[]) {
@@ -205,23 +292,39 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
       <div className="space-y-1">
         <input
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => save("title", title)}
-          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          onChange={(e) => edit("title", e.target.value)}
+          onBlur={() => void flushEdits()}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur(); }}
           placeholder="Untitled"
           maxLength={300}
           aria-label="Title"
+          aria-describedby="note-save-hint"
           className="w-full bg-transparent text-xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/50"
         />
         <textarea
           value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onBlur={() => save("body", body)}
+          onChange={(e) => edit("body", e.target.value)}
+          onBlur={() => void flushEdits()}
           placeholder="Add a note…"
           maxLength={50000}
           aria-label="Note"
+          aria-describedby="note-save-hint"
           className="field-sizing-content min-h-12 w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none placeholder:text-muted-foreground/50"
         />
+        <p role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {saveStatus === "saving" ? "Saving changes…" : saveStatus === "saved" ? (
+            <><Check className="size-3.5 animate-pop text-success" aria-hidden /> Changes saved</>
+          ) : saveStatus === "error" ? "Changes still unsaved" : null}
+        </p>
+        {saveStatus === "error" && (
+          <div className="space-y-2 rounded-lg border border-destructive/30 px-3 py-2 text-xs">
+            <p className="text-destructive" role="alert">{saveError}</p>
+            <div className="flex flex-wrap gap-4">
+              <button className="font-medium text-primary underline-offset-2 hover:underline" onClick={() => void flushEdits()}>Retry save</button>
+              <button className="text-muted-foreground underline-offset-2 hover:underline" onClick={onDiscard}>Close without saving</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {embedId && (provider === "youtube" || provider === "vimeo") && (
@@ -312,15 +415,17 @@ function EntryEditor({ entry, readOnly = false }: { entry: Entry; readOnly?: boo
           <Link2 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onBlur={() => void saveUrl()}
-            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+            onChange={(e) => edit("url", e.target.value)}
+            onBlur={() => void flushEdits()}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur(); }}
             placeholder="https://"
             inputMode="url"
             className="pl-9"
           />
         </div>
       </Field>
+
+      <RelatedIdeas entryId={entry.id} onOpen={onOpenRelated} />
 
       <Field label="Collections">
         <CollectionPicker value={collectionIds} onChange={(ids) => void onCollections(ids)} />

@@ -247,7 +247,7 @@ export async function fetchLinkPreview(url: string): Promise<LinkPreview> {
 
 export async function refreshLinkPreview(entryId: string, url: string) {
   const preview = await fetchLinkPreview(url);
-  const { error } = await createClient().from("entries").update({ link_preview: preview }).eq("id", entryId);
+  const { error } = await createClient().from("entries").update({ link_preview: preview }).eq("id", entryId).eq("url", url);
   if (error) throw error;
   return preview;
 }
@@ -405,8 +405,9 @@ function patchCachedEntries(qc: ReturnType<typeof useQueryClient>, id: string, p
 export function useUpdateEntry() {
   const qc = useQueryClient();
   return useMutation({
+    networkMode: "always",
     mutationFn: async ({ id, patch }: { id: string; patch: EntryPatch }) => {
-      const { error } = await createClient().from("entries").update(patch).eq("id", id);
+      const { error } = await createClient().from("entries").update(patch).eq("id", id).select("id").single();
       if (error) throw error;
     },
     onMutate: ({ id, patch }) => patchCachedEntries(qc, id, patch),

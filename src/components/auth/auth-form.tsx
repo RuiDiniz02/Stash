@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/misc";
 import { errorMessage } from "@/lib/utils";
+import { safeInternalPath } from "@/lib/internal-path";
 
 type Mode = "login" | "signup" | "forgot" | "reset";
 
@@ -18,10 +19,6 @@ const COPY: Record<Mode, { title: string; subtitle: string; cta: string }> = {
   forgot: { title: "Reset password", subtitle: "We'll email you a link to choose a new password.", cta: "Send reset link" },
   reset: { title: "Choose a new password", subtitle: "Use at least 8 characters.", cta: "Update password" },
 };
-
-function safeNext(next: string | null) {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
-}
 
 export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
@@ -47,7 +44,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.replace(safeNext(params.get("next")));
+        router.replace(safeInternalPath(params.get("next")));
         router.refresh();
       } else if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
